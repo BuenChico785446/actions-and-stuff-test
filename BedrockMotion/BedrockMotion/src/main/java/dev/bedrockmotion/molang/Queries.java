@@ -23,7 +23,20 @@ public final class Queries {
             "get_root_locator_offset",
             "graphics_mode_is_any",
             "has_any_leashed_entity_of_type",
+            "cape_flap_amount",
             "has_cape",
+            "has_dash_cooldown",
+            "is_delayed_attacking",
+            "is_elder",
+            "is_levitating",
+            "is_pregnant",
+            "is_sniffing",
+            "kinetic_weapon_damage_duration",
+            "kinetic_weapon_delay",
+            "kinetic_weapon_dismount_duration",
+            "kinetic_weapon_knockback_duration",
+            "sneeze_counter",
+            "unhappy_counter",
             "has_head_gear",
             "has_player_rider",
             "heartbeat_phase",
@@ -129,6 +142,14 @@ public final class Queries {
 
     private static String s(Object o) {
         return o instanceof String x ? x : "";
+    }
+
+    private static String slotOf(Object[] a) {
+        return a.length > 0 && a[0] instanceof String x ? x : "slot.weapon.mainhand";
+    }
+
+    private static int slotIndex(Object[] a) {
+        return a.length > 1 && a[1] instanceof Number n ? n.intValue() : 0;
     }
 
     private static String[] strings(Object[] a, int from) {
@@ -265,11 +286,10 @@ public final class Queries {
             for (String n : strings(a, 0)) if (n.equals(e.entity.name)) return Values.ONE;
             return Values.ZERO;
         });
-        register("get_equipped_item_name", (e, a) -> e.probe.equippedItemName(a.length > 0 ? s(a[0]) : "slot.weapon.mainhand"));
-        register("is_item_equipped", (e, a) -> Values.bool(
-                !e.probe.equippedItemName(a.length > 0 && a[0] instanceof String x ? x : "slot.weapon.mainhand").isEmpty()));
+        register("get_equipped_item_name", (e, a) -> e.probe.equippedItemName(slotOf(a), slotIndex(a)));
+        register("is_item_equipped", (e, a) -> Values.bool(!e.probe.equippedItemName(slotOf(a), slotIndex(a)).isEmpty()));
         register("is_item_name_any", (e, a) -> {
-            String have = e.probe.equippedItemName(a.length > 0 ? s(a[0]) : "slot.weapon.mainhand");
+            String have = e.probe.equippedItemName(slotOf(a), slotIndex(a));
             if (have.isEmpty()) return Values.ZERO;
             for (String n : strings(a, 1)) if (sameId(have, n)) return Values.ONE;
             return Values.ZERO;

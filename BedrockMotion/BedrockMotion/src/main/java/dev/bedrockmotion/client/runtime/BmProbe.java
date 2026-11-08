@@ -1,7 +1,9 @@
 package dev.bedrockmotion.client.runtime;
 
 import dev.bedrockmotion.molang.WorldProbe;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -9,11 +11,41 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 final class BmProbe implements WorldProbe {
 
+    private static final Map<String, String> BEDROCK_ITEM_TAGS = Map.of(
+            "is_sword", "swords",
+            "is_axe", "axes",
+            "is_pickaxe", "pickaxes",
+            "is_shovel", "shovels",
+            "is_hoe", "hoes",
+            "is_spear", "spears",
+            "is_helmet", "head_armor",
+            "is_chestplate", "chest_armor",
+            "is_leggings", "leg_armor",
+            "is_boots", "foot_armor");
+
     Entity entity;
+
+    private ItemStack stack(String slot, int index) {
+        if (entity instanceof Player player && index >= 0) {
+            Inventory inventory = player.getInventory();
+            switch (slot) {
+                case "slot.hotbar" -> {
+                    return index < 9 ? inventory.getItem(index) : ItemStack.EMPTY;
+                }
+                case "slot.inventory" -> {
+                    return index < 27 ? inventory.getItem(9 + index) : ItemStack.EMPTY;
+                }
+                default -> {}
+            }
+        }
+        return stack(slot);
+    }
 
     private ItemStack stack(String slot) {
         if (!(entity instanceof LivingEntity living)) return ItemStack.EMPTY;
@@ -30,7 +62,15 @@ final class BmProbe implements WorldProbe {
 
     @Override
     public String equippedItemName(String slot) {
-        ItemStack s = stack(slot);
+        return nameOf(stack(slot));
+    }
+
+    @Override
+    public String equippedItemName(String slot, int index) {
+        return nameOf(stack(slot, index));
+    }
+
+    private static String nameOf(ItemStack s) {
         return s.isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(s.getItem()).toString();
     }
 
@@ -39,10 +79,19 @@ final class BmProbe implements WorldProbe {
         ItemStack s = stack(slot);
         if (s.isEmpty()) return false;
         for (String tag : tags) {
-            Identifier id = Identifier.tryParse(tag);
-            if (id != null && s.is(TagKey.create(Registries.ITEM, id))) return true;
+            if (hasItemTag(s, tag)) return true;
         }
         return false;
+    }
+
+    private static boolean hasItemTag(ItemStack stack, String tag) {
+        Identifier id = Identifier.tryParse(tag);
+        if (id == null) return false;
+        if (stack.is(TagKey.create(Registries.ITEM, id))) return true;
+        if (id.getPath().equals("is_food")) return stack.has(DataComponents.FOOD);
+        String javaName = BEDROCK_ITEM_TAGS.get(id.getPath());
+        Identifier javaId = javaName == null ? null : Identifier.tryParse("minecraft:" + javaName);
+        return javaId != null && stack.is(TagKey.create(Registries.ITEM, javaId));
     }
 
     @Override
@@ -50,8 +99,7 @@ final class BmProbe implements WorldProbe {
         ItemStack s = stack(slot);
         if (s.isEmpty() || tags.length == 0) return false;
         for (String tag : tags) {
-            Identifier id = Identifier.tryParse(tag);
-            if (id == null || !s.is(TagKey.create(Registries.ITEM, id))) return false;
+            if (!hasItemTag(s, tag)) return false;
         }
         return true;
     }

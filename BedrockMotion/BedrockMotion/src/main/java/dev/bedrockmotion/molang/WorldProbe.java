@@ -16,6 +16,10 @@ public interface WorldProbe {
         return "";
     }
 
+    default String equippedItemName(String slot, int index) {
+        return equippedItemName(slot);
+    }
+
     default boolean relativeBlockHasAnyTag(double dx, double dy, double dz, String[] tags) {
         return false;
     }

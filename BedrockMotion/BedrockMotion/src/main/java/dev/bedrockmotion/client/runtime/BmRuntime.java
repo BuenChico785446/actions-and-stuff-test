@@ -8,6 +8,7 @@ import dev.bedrockmotion.bedrock.EntityIds;
 import dev.bedrockmotion.bedrock.GeometryDef;
 import dev.bedrockmotion.bedrock.LocatorSolver;
 import dev.bedrockmotion.bedrock.ParticleSystem;
+import dev.bedrockmotion.bedrock.PoseHierarchy;
 import dev.bedrockmotion.bedrock.RenderPlan;
 import dev.bedrockmotion.bedrock.RenderPlanner;
 import dev.bedrockmotion.client.BedrockMotionClient;
@@ -22,8 +23,11 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
+import java.util.WeakHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -45,6 +49,8 @@ public final class BmRuntime {
         long usedNanos;
         double walked;
         double walkSpeed;
+        PoseHierarchy hierarchy;
+        boolean hierarchyResolved;
         boolean failed;
         ParticleSystem particles;
         GeometryDef lastGeometry;
@@ -68,6 +74,7 @@ public final class BmRuntime {
     private static volatile Map<String, ClientEntityDef> attachableDefs = Map.of();
     private static volatile List<BedrockPack> packs = List.of();
     private static final Map<EntityType<?>, ClientEntityDef> TYPE_CACHE = new IdentityHashMap<>();
+    private static final Map<GeometryDef, PoseHierarchy> HIERARCHIES = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Integer, Entry> ENTRIES = new HashMap<>();
     private static final Map<String, Entry> ATTACHMENTS = new HashMap<>();
     private static long lastCleanup;
@@ -148,7 +155,9 @@ public final class BmRuntime {
         e.usedNanos = now;
         if (e.failed) return;
         try {
-            double dt = e.lastNanos == 0 ? 0 : Math.min(0.1, Math.max(0, (now - e.lastNanos) / 1e9));
+            boolean paused = Minecraft.getInstance().isPaused();
+            double dt = paused || e.lastNanos == 0 ? 0 : Math.min(0.1, Math.max(0, (now - e.lastNanos) / 1e9));
+            if (paused) e.lastNanos = now;
             if (e.frame == null || dt >= 0.0005) {
                 e.probe.entity = entity;
                 e.animator.env.probe = e.probe;
@@ -156,7 +165,7 @@ public final class BmRuntime {
                 e.animator.update(dt, (entity.tickCount + partialTick) / 20.0, partialTick);
                 RenderPlan plan = RenderPlanner.plan(e.animator);
                 if (!features.entities || (def.identifier.equals("minecraft:player") && !replacePlayers)) plan.layers.clear();
-                BmModelPose driver = plan.layers.isEmpty() && features.driver ? BmModelPose.capture(e.animator.pose) : null;
+                BmModelPose driver = plan.layers.isEmpty() && features.driver ? BmModelPose.capture(e.animator.pose, hierarchyOf(e, def)) : null;
                 boolean hurt = entity instanceof LivingEntity living && (living.hurtTime > 0 || living.deathTime > 0);
                 e.lastGeometry = plan.layers.isEmpty() ? null : plan.layers.get(0).geometry;
                 Identifier skin = def.identifier.equals("minecraft:player") && !plan.layers.isEmpty() ? BmPlayerSkin.resolve(entity) : null;
@@ -203,7 +212,7 @@ public final class BmRuntime {
     private static void frameGate(long now) {
         if (now - lastExtractNanos > 1_500_000L) {
             worldFrame++;
-            double dt = lastWorldNanos == 0 ? 0 : Math.min(0.1, (now - lastWorldNanos) / 1e9);
+            double dt = lastWorldNanos == 0 || Minecraft.getInstance().isPaused() ? 0 : Math.min(0.1, (now - lastWorldNanos) / 1e9);
             lastWorldNanos = now;
             BmParticleWorld.update(dt);
             adoptStale(now);
@@ -330,6 +339,17 @@ public final class BmRuntime {
         };
     }
 
+    private static PoseHierarchy hierarchyOf(Entry entry, ClientEntityDef def) {
+        if (!entry.hierarchyResolved) {
+            entry.hierarchyResolved = true;
+            String id = def.geometry.get("default");
+            if (id == null && !def.geometry.isEmpty()) id = def.geometry.values().iterator().next();
+            GeometryDef geometry = id == null ? null : def.pack.geometry(id.toLowerCase(Locale.ROOT));
+            if (geometry != null) entry.hierarchy = HIERARCHIES.computeIfAbsent(geometry, PoseHierarchy::new);
+        }
+        return entry.hierarchy;
+    }
+
     static void playSounds(Entity entity, EntityAnimator animator) {
         if (animator.pendingSounds.isEmpty()) return;
         for (String event : animator.pendingSounds) BmSounds.play(entity, animator.def.pack, event);
@@ -422,6 +442,7 @@ public final class BmRuntime {
             s.bodyYRotation = yaw;
             s.headYRotation = yaw;
         }
+        fillSpecialStates(entity, s);
         return yaw;
     }
 
@@ -473,6 +494,56 @@ public final class BmRuntime {
         s.extra.put("is_shaking_wetness", BmReflect.flag(entity, "isShaking"));
         s.extra.put("invulnerable_ticks", BmReflect.number(entity, "getInvulnerableTicks"));
         s.swellAmount = BmReflect.numberFloat(entity, "getSwelling", pt);
+    }
+
+    private static void fillSpecialStates(Entity entity, EntitySnapshot s) {
+        Object skin = BmReflect.call(entity, "getSkin");
+        s.extra.put("has_cape", skin != null && BmReflect.call(skin, "cape") != null ? 1.0 : 0.0);
+        s.extra.put("cape_flap_amount", capeFlap(entity, s));
+        s.extra.put("has_dash_cooldown", BmReflect.number(entity, "getJumpCooldown") > 0 ? 1.0 : BmReflect.flag(entity, "isDashing"));
+        s.extra.put("is_delayed_attacking", Math.max(BmReflect.flag(entity, "isDelayedAttacking"), s.engineVars.getOrDefault("attack_time", 0.0) > 0 ? 1.0 : 0.0));
+        boolean elder = BmReflect.flag(entity, "isElder") > 0 || entity.getClass().getSimpleName().equals("ElderGuardian");
+        s.extra.put("is_elder", elder ? 1.0 : 0.0);
+        s.extra.put("is_levitating", hasEffect(entity, "levitation"));
+        s.extra.put("is_pregnant", 0.0);
+        boolean sniffing = entity.getClass().getSimpleName().equals("Sniffer") && String.valueOf(BmReflect.call(entity, "getState")).contains("SNIFFING");
+        s.extra.put("is_sniffing", sniffing ? 1.0 : 0.0);
+        s.extra.put("sneeze_counter", BmReflect.number(entity, "getSneezeCounter"));
+        s.extra.put("unhappy_counter", BmReflect.number(entity, "getUnhappyCounter"));
+        double[] kinetic = BmKinetic.read(entity);
+        s.extra.put("kinetic_weapon_delay", kinetic == null ? 0.0 : kinetic[0]);
+        s.extra.put("kinetic_weapon_dismount_duration", kinetic == null ? 0.0 : kinetic[1]);
+        s.extra.put("kinetic_weapon_knockback_duration", kinetic == null ? 0.0 : kinetic[2]);
+        s.extra.put("kinetic_weapon_damage_duration", kinetic == null ? 0.0 : kinetic[3]);
+    }
+
+    private static double capeFlap(Entity entity, EntitySnapshot s) {
+    double yaw = Math.toRadians(s.bodyYRotation);
+    double forward = -s.positionDelta[0] * Math.sin(yaw)
+            + s.positionDelta[2] * Math.cos(yaw);
+
+    double lift = Math.max(0.0, Math.min(150.0, forward * 300.0));
+    double vertical = Math.max(-6.0, Math.min(32.0, -s.positionDelta[1] * 30.0));
+
+    double horizontal = Math.sqrt(
+            s.positionDelta[0] * s.positionDelta[0]
+                    + s.positionDelta[2] * s.positionDelta[2]);
+
+    double bob = Math.sin(s.modifiedDistanceMoved * 6.0)
+            * 32.0
+            * Math.min(0.1, horizontal);
+
+    return Math.max(0.0, Math.min(1.0,
+            (lift / 2.0 + vertical + bob) / 126.0));
+}
+
+    private static double hasEffect(Entity entity, String name) {
+        if (!(BmReflect.call(entity, "getActiveEffects") instanceof Collection<?> effects) || effects.isEmpty()) return 0.0;
+        for (Object instance : effects) {
+            Object effect = BmReflect.call(instance, "getEffect");
+            if (effect != null && effect.toString().contains(name)) return 1.0;
+        }
+        return 0.0;
     }
 
     private static void cleanup(long now) {
