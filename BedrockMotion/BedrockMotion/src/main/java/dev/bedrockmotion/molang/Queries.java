@@ -248,6 +248,14 @@ public final class Queries {
         num("mark_variant", e -> e.entity.markVariant);
         num("skin_id", e -> e.entity.skinId);
         num("main_hand_item_use_duration", e -> e.entity.mainHandItemUseDuration);
+        num("main_hand_item_max_duration", e -> e.entity.mainHandItemMaxDuration);
+        num("swim_amount", e -> e.entity.engineVars.getOrDefault("swim_amount", 0.0));
+        register("movement_direction", (e, a) -> {
+            double[] v = e.entity.positionDelta;
+            double len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            int i = (int) d(a, 0);
+            return len < 1.0e-9 || i < 0 || i > 2 ? 0.0 : v[i] / len;
+        });
         num("item_remaining_use_duration", e -> e.entity.itemRemainingUseDuration);
         num("item_max_use_duration", e -> e.entity.itemMaxUseDuration);
         num("cooldown_time_remaining", e -> e.entity.cooldownTimeRemaining);

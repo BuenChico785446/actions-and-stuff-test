@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 public final class BedrockPack {
 
@@ -32,6 +33,8 @@ public final class BedrockPack {
     public final java.util.Set<String> soundEvents = ConcurrentHashMap.newKeySet();
     public PackSettingsData settings = new PackSettingsData();
     public boolean javaResourcePack;
+    public List<BedrockPack> below = List.of();
+    public boolean baseOnly;
     private final Map<String, MaterialKind> kindCache = new ConcurrentHashMap<>();
 
     private BedrockPack(String name, PackFiles files) {
@@ -143,6 +146,44 @@ public final class BedrockPack {
         }
     }
 
+    private static <T> T lookup(BedrockPack start, Function<BedrockPack, Map<String, T>> map, String id) {
+        T t = map.apply(start).get(id);
+        if (t != null) return t;
+        for (BedrockPack p : start.below) {
+            t = map.apply(p).get(id);
+            if (t != null) return t;
+        }
+        return null;
+    }
+
+    public GeometryDef geometry(String id) {
+        return lookup(this, p -> p.geometries, id);
+    }
+
+    public AnimationDef animation(String id) {
+        return lookup(this, p -> p.animations, id);
+    }
+
+    public ControllerDef controller(String id) {
+        return lookup(this, p -> p.controllers, id);
+    }
+
+    public RenderControllerDef renderController(String id) {
+        return lookup(this, p -> p.renderControllers, id);
+    }
+
+    public ParticleDef particle(String id) {
+        return lookup(this, p -> p.particles, id);
+    }
+
+    public static void stack(List<BedrockPack> loaded) {
+        for (int i = 0; i < loaded.size(); i++) {
+            List<BedrockPack> lower = new ArrayList<>();
+            for (int j = i - 1; j >= 0; j--) lower.add(loaded.get(j));
+            loaded.get(i).below = List.copyOf(lower);
+        }
+    }
+
     public MaterialKind materialKind(String material) {
         if (material == null) return MaterialKind.CUTOUT;
         String key = material.toLowerCase(Locale.ROOT);
@@ -181,6 +222,16 @@ public final class BedrockPack {
     }
 
     public byte[] textureBytes(String ref) {
+        byte[] own = ownTextureBytes(ref);
+        if (own != null) return own;
+        for (BedrockPack p : below) {
+            byte[] lower = p.ownTextureBytes(ref);
+            if (lower != null) return lower;
+        }
+        return null;
+    }
+
+    private byte[] ownTextureBytes(String ref) {
         if (ref == null) return null;
         String base = ref.endsWith(".png") || ref.endsWith(".tga") ? ref.substring(0, ref.length() - 4) : ref;
         for (String ext : new String[] {".png", ".tga", ".jpg", ".jpeg"}) {

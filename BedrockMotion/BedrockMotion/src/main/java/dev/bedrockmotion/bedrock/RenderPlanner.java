@@ -21,7 +21,7 @@ public final class RenderPlanner {
         plan.scaleZ = def.scaleZ == null ? uniform : def.scaleZ.runNum(env) * uniform;
         for (ClientEntityDef.Conditional c : def.renderControllers) {
             if (c.condition() != null && !Values.truthy(c.condition().run(env))) continue;
-            RenderControllerDef rc = def.pack.renderControllers.get(c.name().toLowerCase(Locale.ROOT));
+            RenderControllerDef rc = def.pack.renderController(c.name().toLowerCase(Locale.ROOT));
             if (rc == null) continue;
             RenderPlan.Layer layer = layer(def, rc, env);
             if (layer != null) plan.layers.add(layer);
@@ -43,7 +43,7 @@ public final class RenderPlanner {
         String geoId = resolve(def.geometry, geoRef, "geometry.");
         if (geoId == null && geoRef != null) geoId = geoRef;
         if (geoId == null) return null;
-        GeometryDef geo = def.pack.geometries.get(geoId.toLowerCase(Locale.ROOT));
+        GeometryDef geo = def.pack.geometry(geoId.toLowerCase(Locale.ROOT));
         if (geo == null) return null;
         RenderPlan.Layer layer = new RenderPlan.Layer();
         layer.geometry = geo;

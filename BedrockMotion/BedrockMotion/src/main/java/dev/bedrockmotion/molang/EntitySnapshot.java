@@ -28,6 +28,7 @@ public final class EntitySnapshot {
     public double hurtDirection;
     public double swellAmount;
     public double mainHandItemUseDuration;
+    public double mainHandItemMaxDuration;
     public double itemRemainingUseDuration;
     public double itemMaxUseDuration;
     public double cooldownTimeRemaining;
@@ -72,4 +73,21 @@ public final class EntitySnapshot {
     public String itemName = "";
     public final Map<String, Double> properties = new HashMap<>();
     public final Map<String, Double> extra = new HashMap<>();
+
+    public final Map<String, Double> engineVars = new HashMap<>();
+
+    public EntitySnapshot() {
+        resetEngineVars();
+    }
+
+    public void resetEngineVars() {
+        engineVars.clear();
+        engineVars.put("attack_time", 0.0);
+        engineVars.put("swim_amount", 0.0);
+        engineVars.put("gliding_speed_value", 1.0);
+        engineVars.put("is_first_person", 0.0);
+        engineVars.put("is_paperdoll", 0.0);
+        engineVars.put("map_face_icon", 0.0);
+        engineVars.put("player_x_rotation", 0.0);
+    }
 }

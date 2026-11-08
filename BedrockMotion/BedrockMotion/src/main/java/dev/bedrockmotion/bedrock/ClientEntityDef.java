@@ -34,6 +34,25 @@ public final class ClientEntityDef {
     public boolean hideArmor;
     public long minEngine;
 
+    public void inheritMissing(ClientEntityDef lower) {
+        for (Map.Entry<String, String> e : lower.materials.entrySet()) materials.putIfAbsent(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> e : lower.textures.entrySet()) textures.putIfAbsent(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> e : lower.geometry.entrySet()) geometry.putIfAbsent(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> e : lower.animations.entrySet()) animations.putIfAbsent(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> e : lower.soundEffects.entrySet()) soundEffects.putIfAbsent(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> e : lower.particleEffects.entrySet()) particleEffects.putIfAbsent(e.getKey(), e.getValue());
+        if (renderControllers.isEmpty()) renderControllers.addAll(lower.renderControllers);
+        if (animate.isEmpty()) animate.addAll(lower.animate);
+        if (initialize.length == 0) initialize = lower.initialize;
+        if (preAnimation.length == 0) preAnimation = lower.preAnimation;
+        if (scale == null) scale = lower.scale;
+        if (scaleX == null) scaleX = lower.scaleX;
+        if (scaleY == null) scaleY = lower.scaleY;
+        if (scaleZ == null) scaleZ = lower.scaleZ;
+        if (!enableAttachables) enableAttachables = lower.enableAttachables;
+        if (!hideArmor) hideArmor = lower.hideArmor;
+    }
+
     public static ClientEntityDef parse(Object rootJson, Symbols symbols, List<String> problems) {
         Map<String, Object> root = Json.obj(rootJson);
         if (root == null) return null;
@@ -100,8 +119,21 @@ public final class ClientEntityDef {
     private static Script[] scriptList(Object o, Symbols symbols, List<String> problems) {
         List<Object> l = Json.arr(o);
         if (l == null) return new Script[0];
+        List<String> parts = new ArrayList<>();
+        for (Object x : l) if (x instanceof String s) parts.add(s);
+        // Bedrock joins script array entries, so one statement can span several (vanilla piglin ternary blocks).
         List<Script> out = new ArrayList<>();
-        for (Object x : l) if (x instanceof String s) out.add(Script.compile(s, symbols, problems));
+        for (int i = 0; i < parts.size(); i++) {
+            String cur = parts.get(i);
+            int j = i;
+            while (!Script.parses(cur, symbols) && j + 1 < parts.size()) cur = cur + "\n" + parts.get(++j);
+            if (j > i && Script.parses(cur, symbols)) {
+                out.add(Script.compile(cur, symbols, problems));
+                i = j;
+            } else {
+                out.add(Script.compile(parts.get(i), symbols, problems));
+            }
+        }
         return out.toArray(new Script[0]);
     }
 

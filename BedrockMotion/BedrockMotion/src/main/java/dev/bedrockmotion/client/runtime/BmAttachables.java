@@ -65,6 +65,7 @@ public final class BmAttachables {
                     BmRuntime.fill(holder, e, snapshot, 1.0f, dt);
                     env.context.put("owning_entity", BmRuntime.envOf(holderId));
                 }
+                snapshot.engineVars.put("is_first_person", firstPerson ? 1.0 : 0.0);
                 double life = holder != null ? holder.tickCount / 20.0 : env.lifeTime + dt;
                 e.animator.update(dt, life, 1.0);
                 RenderPlan plan = RenderPlanner.plan(e.animator);

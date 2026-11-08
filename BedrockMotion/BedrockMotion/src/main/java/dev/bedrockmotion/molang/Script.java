@@ -28,6 +28,15 @@ public final class Script {
         return prev != null ? prev : made;
     }
 
+    public static boolean parses(String src, Symbols symbols) {
+        try {
+            MolangParser.compile(src, symbols, new ArrayList<>());
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     private static Script compileUncached(String src, Symbols symbols, List<String> problems) {
         List<String> warnings = new ArrayList<>();
         try {

@@ -32,6 +32,7 @@ public final class EntityAnimator {
         boolean allFinished;
         String key;
         String prevKey;
+        long ranSeq = -1;
     }
 
     public final ClientEntityDef def;
@@ -44,6 +45,9 @@ public final class EntityAnimator {
     private final Map<String, AnimInstance> anims = new HashMap<>();
     private final Map<String, ControllerInstance> controllers = new HashMap<>();
     private boolean initialized;
+    private long updateSeq;
+    private int controllerDepth;
+    private final Map<String, Integer> engineVarIds = new HashMap<>();
     private final double[] sampled = new double[3];
     private final double[] current = new double[3];
 
@@ -55,14 +59,17 @@ public final class EntityAnimator {
     }
 
     public void update(double dt, double lifeTime, double frameAlpha) {
+        updateSeq++;
         env.deltaTime = dt;
         env.lifeTime = lifeTime;
         env.frameAlpha = frameAlpha;
         env.timeStamp = lifeTime;
+        seedEngineVars();
         if (!initialized) {
             initialized = true;
             if (def.initialize.length > 0) Script.runAll(env, def.initialize);
         }
+        seedEngineVars();
         if (def.preAnimation.length > 0) Script.runAll(env, def.preAnimation);
         for (AnimInstance a : anims.values()) a.touched = false;
         pose.reset();
@@ -72,10 +79,10 @@ public final class EntityAnimator {
             if (id == null) continue;
             String lower = id.toLowerCase(Locale.ROOT);
             if (lower.startsWith("controller.")) {
-                ControllerDef cd = def.pack.controllers.get(lower);
+                ControllerDef cd = def.pack.controller(lower);
                 if (cd != null) runController(controllerFor(lower, cd), 1.0);
             } else {
-                AnimationDef ad = def.pack.animations.get(lower);
+                AnimationDef ad = def.pack.animation(lower);
                 if (ad != null) play(instance(lower, ad), 1.0);
             }
         }
@@ -86,6 +93,19 @@ public final class EntityAnimator {
                 a.finished = false;
                 a.lastEventTime = -1;
             }
+        }
+    }
+
+    private void seedEngineVars() {
+        Map<String, Double> vars = env.entity.engineVars;
+        if (vars.isEmpty()) return;
+        for (Map.Entry<String, Double> e : vars.entrySet()) {
+            Integer id = engineVarIds.get(e.getKey());
+            if (id == null) {
+                id = env.symbols.varId(e.getKey());
+                engineVarIds.put(e.getKey(), id);
+            }
+            env.setVar(id, e.getValue());
         }
     }
 
@@ -109,6 +129,18 @@ public final class EntityAnimator {
     }
 
     private void runController(ControllerInstance c, double weight) {
+        if (c.ranSeq == updateSeq) return;
+        if (controllerDepth >= 8) return;
+        c.ranSeq = updateSeq;
+        controllerDepth++;
+        try {
+            runControllerInner(c, weight);
+        } finally {
+            controllerDepth--;
+        }
+    }
+
+    private void runControllerInner(ControllerInstance c, double weight) {
         if (c.state == null) {
             c.state = c.def.states.get(c.def.initialState);
             if (c.state == null && !c.def.states.isEmpty()) c.state = c.def.states.values().iterator().next();
@@ -161,7 +193,19 @@ public final class EntityAnimator {
         for (ControllerDef.AnimRef ref : s.animations) {
             String id = def.animations.get(ref.name().toLowerCase(Locale.ROOT));
             if (id == null) continue;
-            AnimationDef ad = def.pack.animations.get(id.toLowerCase(Locale.ROOT));
+            String lowerId = id.toLowerCase(Locale.ROOT);
+            if (lowerId.startsWith("controller.")) {
+                ControllerDef nested = def.pack.controller(lowerId);
+                if (nested == null) continue;
+                double nw = weight;
+                if (ref.blend() != null) nw *= ref.blend().runNum(env);
+                double savedStateTime = env.stateTime;
+                runController(controllerFor(lowerId, nested), nw);
+                env.stateTime = savedStateTime;
+                has = true;
+                continue;
+            }
+            AnimationDef ad = def.pack.animation(lowerId);
             if (ad == null) continue;
             double w = weight;
             if (ref.blend() != null) w *= ref.blend().runNum(env);

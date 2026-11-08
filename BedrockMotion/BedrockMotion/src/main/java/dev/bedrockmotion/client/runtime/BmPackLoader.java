@@ -49,6 +49,10 @@ public final class BmPackLoader implements PreparableReloadListener {
         f.textureMeshes = features == null || Json.bool(features.get("textureMeshes"), true);
         f.sounds = features == null || Json.bool(features.get("sounds"), true);
         if (config != null && !Json.bool(config.get("enabled"), true)) return out;
+        java.util.Set<String> basePacks = new java.util.HashSet<>();
+        if (config != null && config.get("basePacks") instanceof List<?> bl) {
+            for (Object o : bl) if (o instanceof String bs) basePacks.add(bs);
+        }
         Path dir = FabricLoader.getInstance().getGameDir().resolve("bedrockmotion").resolve("packs");
         try {
             Files.createDirectories(dir);
@@ -62,7 +66,12 @@ public final class BmPackLoader implements PreparableReloadListener {
                 if (!Files.isDirectory(p) && !lower.endsWith(".zip") && !lower.endsWith(".mcpack")) continue;
                 try {
                     PackFiles files = PackFiles.open(p);
-                    out.add(loadPack(name, files, config));
+                    BedrockPack loadedPack = loadPack(name, files, config);
+                    loadedPack.baseOnly = lower.startsWith("base_") || basePacks.contains(name);
+                    if (loadedPack.baseOnly) {
+                        BedrockMotionClient.LOGGER.info("Pack {} is a base pack: it only supplies animations, geometries and textures to the packs above it", name);
+                    }
+                    out.add(loadedPack);
                 } catch (IOException | RuntimeException e) {
                     BedrockMotionClient.LOGGER.error("Pack {} could not be loaded", name, e);
                 }
@@ -76,6 +85,7 @@ public final class BmPackLoader implements PreparableReloadListener {
             fromResources.javaResourcePack = true;
             out.add(fromResources);
         }
+        out.sort((a, b) -> Boolean.compare(b.baseOnly, a.baseOnly));
         return out;
     }
 

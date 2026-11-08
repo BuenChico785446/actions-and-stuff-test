@@ -44,6 +44,7 @@ public final class BmRuntime {
         long lastNanos;
         long usedNanos;
         double walked;
+        double walkSpeed;
         boolean failed;
         ParticleSystem particles;
         GeometryDef lastGeometry;
@@ -84,12 +85,10 @@ public final class BmRuntime {
     private BmRuntime() {}
 
     public static void apply(List<BedrockPack> loaded) {
-        Map<String, ClientEntityDef> defs = new HashMap<>();
-        Map<String, ClientEntityDef> attachables = new HashMap<>();
-        for (BedrockPack p : loaded) {
-            defs.putAll(p.entities);
-            attachables.putAll(p.attachables);
-        }
+        BedrockPack.stack(loaded);
+        dev.bedrockmotion.bedrock.EntityStack.Result stacked = dev.bedrockmotion.bedrock.EntityStack.build(loaded);
+        Map<String, ClientEntityDef> defs = stacked.entities();
+        Map<String, ClientEntityDef> attachables = stacked.attachables();
         entityDefs = defs;
         attachableDefs = attachables;
         packs = loaded;
@@ -292,7 +291,7 @@ public final class BmRuntime {
         }
         if (e.particles == null) {
             if (an.pendingParticles.isEmpty()) return List.of();
-            e.particles = new ParticleSystem(an.def.pack.particles::get, an.env);
+            e.particles = new ParticleSystem(an.def.pack::particle, an.env);
         }
         double[] pos = {entity.getX(), entity.getY(), entity.getZ()};
         for (EntityAnimator.ParticleRequest r : an.pendingParticles) {
@@ -357,9 +356,18 @@ public final class BmRuntime {
         double horizontal = Math.sqrt(d.x * d.x + d.z * d.z);
         s.groundSpeed = horizontal * 20.0;
         s.verticalSpeed = d.y * 20.0;
-        s.modifiedMoveSpeed = s.groundSpeed;
-        entry.walked += s.groundSpeed * dt;
-        s.modifiedDistanceMoved = entry.walked;
+        // These two queries are Java's limbSwingAmount / limbSwing, not blocks per second.
+        Object walkState = BmWalk.state(entity);
+        if (walkState != null) {
+            s.modifiedMoveSpeed = BmReflect.numberFloat(walkState, "speed", pt);
+            s.modifiedDistanceMoved = BmReflect.numberFloat(walkState, "position", pt);
+        } else {
+            double target = Math.min(horizontal * 4.0, 1.0);
+            entry.walkSpeed += (target - entry.walkSpeed) * Math.min(1.0, 0.4 * dt * 20.0);
+            entry.walked += entry.walkSpeed * dt * 20.0;
+            s.modifiedMoveSpeed = entry.walkSpeed;
+            s.modifiedDistanceMoved = entry.walked;
+        }
         s.moving = horizontal > 1.0e-4;
         s.onGround = entity.onGround();
         s.inWater = entity.isInWater();
@@ -376,6 +384,7 @@ public final class BmRuntime {
         s.distanceFromCamera = mc.player == null ? 0 : entity.distanceTo(mc.player);
         s.targetXRotation = entity.getXRot();
         s.extra.clear();
+        s.resetEngineVars();
         s.extra.put("is_invisible", entity.isInvisible() ? 1.0 : 0.0);
         s.extra.put("is_sheared", BmReflect.flag(entity, "isSheared"));
         s.extra.put("is_saddled", BmReflect.flag(entity, "isSaddled"));
@@ -384,6 +393,11 @@ public final class BmRuntime {
         s.extra.put("is_charging", BmReflect.flag(entity, "isCharging"));
         s.extra.put("is_wall_climbing", BmReflect.flag(entity, "onClimbable"));
         s.extra.put("is_carrying_block", BmReflect.flag(entity, "getCarriedBlock"));
+        fillMobStates(entity, s, pt);
+        s.spectator = BmReflect.flag(entity, "isSpectator") > 0;
+        s.headInWater = BmReflect.flag(entity, "isUnderWater") > 0;
+        s.jumping = !s.onGround && d.y > 0.0;
+        s.engineVars.put("player_x_rotation", s.localPlayer ? (double) entity.getXRot() : 0.0);
         float yaw = entity.getYRot();
         if (entity instanceof LivingEntity living) {
             float body = Mth.rotLerp(pt, living.yBodyRotO, living.yBodyRot);
@@ -392,6 +406,7 @@ public final class BmRuntime {
             s.bodyYRotation = body;
             s.headYRotation = head;
             s.targetYRotation = Mth.clamp(Mth.wrapDegrees(head - body), -85f, 85f);
+            s.yawSpeed = Mth.wrapDegrees(living.yBodyRot - living.yBodyRotO) * 20.0;
             s.health = living.getHealth();
             s.maxHealth = living.getMaxHealth();
             s.baby = living.isBaby();
@@ -402,11 +417,62 @@ public final class BmRuntime {
             s.usingItem = living.isUsingItem();
             s.extra.put("hurt_time", (double) living.hurtTime);
             s.extra.put("has_head_gear", living.getItemBySlot(EquipmentSlot.HEAD).isEmpty() ? 0.0 : 1.0);
+            fillLivingStates(living, s, pt, d.x * d.x + d.y * d.y + d.z * d.z);
         } else {
             s.bodyYRotation = yaw;
             s.headYRotation = yaw;
         }
         return yaw;
+    }
+
+    private static void fillLivingStates(LivingEntity living, EntitySnapshot s, float pt, double speedSquared) {
+        s.engineVars.put("attack_time", BmReflect.numberFloat(living, "getAttackAnim", pt));
+        double swim = BmReflect.numberFloat(living, "getSwimAmount", pt);
+        s.engineVars.put("swim_amount", swim);
+        if (s.gliding) {
+            double f = speedSquared / 0.2;
+            f = f * f * f;
+            s.engineVars.put("gliding_speed_value", f < 1.0 ? 1.0 : f);
+        }
+        s.blocking = BmReflect.flag(living, "isBlocking") > 0;
+        s.extra.put("is_crawling", BmReflect.flag(living, "isVisuallyCrawling"));
+        s.mainHandItemUseDuration = 0;
+        s.mainHandItemMaxDuration = 0;
+        s.itemRemainingUseDuration = 0;
+        s.itemMaxUseDuration = 0;
+        if (s.usingItem) {
+            double remaining = BmReflect.number(living, "getUseItemRemainingTicks");
+            double used = BmReflect.number(living, "getTicksUsingItem");
+            double max = remaining + used;
+            s.itemRemainingUseDuration = remaining / 20.0;
+            s.itemMaxUseDuration = max / 20.0;
+            Object hand = BmReflect.call(living, "getUsedItemHand");
+            if (hand == null || String.valueOf(hand).contains("MAIN")) {
+                s.mainHandItemUseDuration = remaining;
+                s.mainHandItemMaxDuration = max;
+            }
+        }
+    }
+
+    private static void fillMobStates(Entity entity, EntitySnapshot s, float pt) {
+        s.hasTarget = BmReflect.flag(entity, "isAggressive") > 0;
+        s.sitting = BmReflect.firstFlag(entity, "isInSittingPose", "isSitting") > 0;
+        s.tamed = BmReflect.firstFlag(entity, "isTame", "isTamed") > 0;
+        s.extra.put("is_leashed", BmReflect.flag(entity, "isLeashed"));
+        s.extra.put("is_resting", BmReflect.flag(entity, "isResting"));
+        s.extra.put("is_standing", BmReflect.flag(entity, "isStanding"));
+        s.extra.put("is_dancing", BmReflect.flag(entity, "isDancing"));
+        s.extra.put("is_celebrating", BmReflect.firstFlag(entity, "isCelebrating", "isDancing"));
+        s.extra.put("is_interested", BmReflect.flag(entity, "isInterested"));
+        s.extra.put("is_stalking", BmReflect.flag(entity, "isCrouching"));
+        s.extra.put("is_digging", BmReflect.flag(entity, "isDigging"));
+        s.extra.put("is_emerging", BmReflect.flag(entity, "isEmerging"));
+        s.extra.put("is_searching", BmReflect.flag(entity, "isSearching"));
+        s.extra.put("is_croaking", BmReflect.flag(entity, "isCroaking"));
+        s.extra.put("is_charged", BmReflect.flag(entity, "isCharged"));
+        s.extra.put("is_shaking_wetness", BmReflect.flag(entity, "isShaking"));
+        s.extra.put("invulnerable_ticks", BmReflect.number(entity, "getInvulnerableTicks"));
+        s.swellAmount = BmReflect.numberFloat(entity, "getSwelling", pt);
     }
 
     private static void cleanup(long now) {
