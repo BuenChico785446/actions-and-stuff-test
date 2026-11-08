@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.bedrockmotion.client.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "EntityRenderStateMixin",
+    "EntityRendererMixin",
+    "EntityRenderDispatcherMixin",
+    "ModelFeatureRendererMixin",
+    "ModelPartAccessor",
+    "ItemModelResolverMixin",
+    "ItemStackRenderStateMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

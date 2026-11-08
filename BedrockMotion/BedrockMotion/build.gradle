@@ -1,0 +1,76 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(project.java_version as int)
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = project.java_version as int
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+loom {
+    mixin {
+        defaultRefmapName.set("${project.mod_id}.refmap.json")
+    }
+    runs {
+        client {
+            client()
+            setConfigName('BedrockMotion Client')
+            ideConfigGenerated(true)
+            runDir('runs/client')
+        }
+    }
+}
+
+tasks.named('test') {
+    failOnNoDiscoveredTests = false
+}
+
+def selfTestMain = ['MolangSelfTest', 'AnimatorSmokeTest', 'PackCheck', 'ConverterTest', 'TextureTest']
+selfTestMain.each { name ->
+    tasks.register("run${name}", JavaExec) {
+        group = 'bedrockmotion'
+        description = "Fuehrt ${name} aus (Argumente: -Pargs=\"pfad1 pfad2\")"
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = "dev.bedrockmotion.${name}"
+        args = (project.findProperty('args') ?: '').toString().split(' ').findAll { it }
+    }
+}
+
+tasks.register('convertPack', JavaExec) {
+    group = 'bedrockmotion'
+    description = 'Bedrock-Pack in ein Java-Ressourcenpack-ZIP umwandeln: -Pin=pack.mcpack -Pout=ausgabe.zip'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bedrockmotion.tools.PackConverter'
+    args = [project.findProperty('in') ?: '', project.findProperty('out') ?: '']
+}
