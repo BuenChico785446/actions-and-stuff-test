@@ -1,54 +1,54 @@
 package dev.bedrockmotion.client.runtime;
 
 import dev.bedrockmotion.bedrock.ParticleSystem;
-import dev.bedrockmotion.client.BedrockMotionClient;
-import dev.bedrockmotion.json.Json;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import net.fabricmc.loader.api.FabricLoader;
+import dev.bedrockmotion.client.config.BedrockMotionConfig;
+import me.shedaniel.autoconfig.AutoConfig;
+import me.shedaniel.autoconfig.ConfigHolder;
+import me.shedaniel.autoconfig.serializer.GsonConfigSerializer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.InteractionResult;
 
 public final class BmConfig {
 
-    public static final List<String> FEATURES =
-            List.of("entities", "driver", "attachables", "equipment", "particles", "textureMeshes", "sounds");
-
-    public static volatile boolean enabled = true;
+    private static volatile ConfigHolder<BedrockMotionConfig> holder;
+    private static volatile String loadedSignature;
 
     private BmConfig() {}
 
-    private static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve("bedrockmotion.json");
+    public static void init() {
+        ConfigHolder<BedrockMotionConfig> registered = AutoConfig.register(BedrockMotionConfig.class, GsonConfigSerializer::new);
+        registered.registerSaveListener((manager, config) -> {
+            apply(config);
+            if (!config.packSignature().equals(loadedSignature)) {
+                Minecraft minecraft = Minecraft.getInstance();
+                minecraft.execute(() -> minecraft.reloadResourcePacks());
+            }
+            return InteractionResult.SUCCESS;
+        });
+        holder = registered;
+        apply(registered.getConfig());
     }
 
-    static Map<String, Object> read() {
-        Path file = file();
-        if (!Files.isRegularFile(file)) return null;
-        try {
-            return Json.obj(Json.parse(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)));
-        } catch (IOException | RuntimeException e) {
-            BedrockMotionClient.LOGGER.warn("config/bedrockmotion.json invalid: {}", e.getMessage());
-            return null;
-        }
+    public static BedrockMotionConfig get() {
+        ConfigHolder<BedrockMotionConfig> current = holder;
+        return current == null ? new BedrockMotionConfig() : current.getConfig();
     }
 
-    public static void save() {
-        Map<String, Object> config = read();
-        Map<String, Object> out = config == null ? new LinkedHashMap<>() : new LinkedHashMap<>(config);
-        out.put("enabled", enabled);
-        out.put("replacePlayers", BmRuntime.replacePlayers);
-        out.put("particleScale", ParticleSystem.sizeFactor);
-        Map<String, Object> features = new LinkedHashMap<>();
-        for (String name : FEATURES) features.put(name, BmRuntime.features.get(name));
-        out.put("features", features);
-        try {
-            Files.writeString(file(), Json.write(out), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            BedrockMotionClient.LOGGER.warn("config/bedrockmotion.json could not be saved: {}", e.getMessage());
-        }
+    static void markLoaded(BedrockMotionConfig config) {
+        loadedSignature = config.packSignature();
+    }
+
+    static void apply(BedrockMotionConfig config) {
+        BmRuntime.replacePlayers = config.replacePlayers;
+        ParticleSystem.sizeFactor = config.clampedParticleScale();
+        BedrockMotionConfig.Features chosen = config.features == null ? new BedrockMotionConfig.Features() : config.features;
+        BmRuntime.Features f = BmRuntime.features;
+        f.entities = chosen.entities;
+        f.driver = chosen.driver;
+        f.attachables = chosen.attachables;
+        f.equipment = chosen.equipment;
+        f.particles = chosen.particles;
+        f.textureMeshes = chosen.textureMeshes;
+        f.sounds = chosen.sounds;
     }
 }

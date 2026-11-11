@@ -44,10 +44,12 @@ public final class AnimationDef {
                 return;
             }
             if (t <= f[0].time) {
+                env.keyFrameLerpTime = 0;
                 eval(env, f[0].pre, out, cur);
                 return;
             }
             if (t >= f[n - 1].time) {
+                env.keyFrameLerpTime = 1;
                 eval(env, f[n - 1].post, out, cur);
                 return;
             }
@@ -57,6 +59,7 @@ public final class AnimationDef {
             Keyframe b = f[i + 1];
             double span = b.time - a.time;
             double alpha = span <= 0 ? 1 : (t - a.time) / span;
+            env.keyFrameLerpTime = alpha;
             if (a.lerp == STEP) {
                 eval(env, a.post, out, cur);
                 return;

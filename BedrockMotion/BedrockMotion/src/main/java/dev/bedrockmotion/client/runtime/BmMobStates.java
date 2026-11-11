@@ -2,7 +2,6 @@ package dev.bedrockmotion.client.runtime;
 
 import dev.bedrockmotion.molang.EntitySnapshot;
 import java.util.List;
-import net.minecraft.world.entity.Entity;
 
 final class BmMobStates {
 
@@ -32,7 +31,7 @@ final class BmMobStates {
 
     private BmMobStates() {}
 
-    static void fill(Entity entity, EntitySnapshot s, float pt) {
+    static void fill(Object entity, EntitySnapshot s, float pt) {
         s.variant = 0;
         s.markVariant = 0;
         s.extra.put("fuse_time", fuseTime(entity));
@@ -58,23 +57,41 @@ final class BmMobStates {
                 s.variant = indexOf(HORSE, BmReflect.call(entity, "getVariant"));
                 s.markVariant = indexOf(MARKINGS, BmReflect.call(entity, "getMarkings"));
             }
-            case "Llama" -> s.variant = indexOf(LLAMA, BmReflect.call(entity, "getVariant"));
+            case "Llama" -> {
+                s.variant = indexOf(LLAMA, BmReflect.call(entity, "getVariant"));
+                s.extra.put("is_chested", BmReflect.flag(entity, "hasChest"));
+            }
             case "TraderLlama" -> {
                 s.variant = indexOf(LLAMA, BmReflect.call(entity, "getVariant"));
                 s.markVariant = 1;
+                s.extra.put("is_chested", BmReflect.flag(entity, "hasChest"));
             }
+            case "Donkey", "Mule" -> s.extra.put("is_chested", BmReflect.flag(entity, "hasChest"));
             case "Cat" -> s.variant = indexOf(CAT, BmReflect.call(entity, "getVariant"));
             case "Wolf" -> {
                 s.variant = indexOf(WOLF, BmReflect.call(entity, "getVariant"));
                 s.extra.put("shake_angle", BmReflect.fieldNumber(entity, "shakeAnim"));
+                s.extra.put("head_roll_angle", BmReflect.numberFloat(entity, "getHeadRollAngle", pt));
             }
             case "Fox" -> {
                 s.variant = indexOf(FOX, BmReflect.call(entity, "getVariant"));
                 s.extra.put("is_stunned", BmReflect.flag(entity, "isFaceplanted"));
             }
-            case "Axolotl" -> s.variant = indexOf(AXOLOTL, BmReflect.call(entity, "getVariant"));
+            case "Axolotl" -> {
+                s.variant = indexOf(AXOLOTL, BmReflect.call(entity, "getVariant"));
+                s.extra.put("is_playing_dead", BmReflect.flag(entity, "isPlayingDead"));
+            }
             case "Rabbit" -> s.variant = indexOf(RABBIT, BmReflect.call(entity, "getVariant"));
-            case "Parrot" -> s.variant = indexOf(PARROT, BmReflect.call(entity, "getVariant"));
+            case "Parrot" -> {
+                s.variant = indexOf(PARROT, BmReflect.call(entity, "getVariant"));
+                s.extra.put("wing_flap_position", lerpField(entity, "oFlap", "flap", pt));
+                s.extra.put("wing_flap_speed", lerpField(entity, "oFlapSpeed", "flapSpeed", pt));
+            }
+            case "EnderDragon" -> s.extra.put("wing_flap_position", lerpField(entity, "oFlapTime", "flapTime", pt));
+            case "PolarBear" -> s.extra.put("standing_scale", BmReflect.numberFloat(entity, "getStandingAnimationScale", pt));
+            case "Evoker", "Illusioner" -> s.extra.put("is_casting", BmReflect.flag(entity, "isCastingSpell"));
+            case "WitherBoss" -> s.extra.put("is_shield_powered", BmReflect.flag(entity, "isPowered"));
+            case "Creeper" -> s.extra.put("swelling_dir", BmReflect.number(entity, "getSwellDir"));
             case "Mooshroom", "MushroomCow" -> s.variant = indexOf(MOOSHROOM, BmReflect.call(entity, "getVariant"));
             case "Shulker" -> shulker(entity, s);
             case "Panda" -> panda(entity, s, pt);
@@ -90,7 +107,10 @@ final class BmMobStates {
                 s.extra.put("is_admiring", pose.equals("admiring_item") ? 1.0 : 0.0);
                 s.extra.put("is_celebrating_special", pose.equals("dancing") || BmReflect.flag(entity, "isDancing") > 0 ? 1.0 : 0.0);
             }
-            case "Turtle" -> s.extra.put("is_pregnant", BmReflect.flag(entity, "hasEgg"));
+            case "Turtle" -> {
+                s.extra.put("is_pregnant", BmReflect.flag(entity, "hasEgg"));
+                s.extra.put("is_laying_egg", BmReflect.flag(entity, "isLayingEgg"));
+            }
             case "Warden" -> warden(entity, s, pt);
             case "Sniffer" -> sniffer(entity, s);
             case "HappyGhast" -> {
@@ -101,15 +121,20 @@ final class BmMobStates {
         }
     }
 
+    private static double lerpField(Object entity, String previous, String current, float pt) {
+        double before = BmReflect.fieldNumber(entity, previous);
+        return before + (BmReflect.fieldNumber(entity, current) - before) * pt;
+    }
+
     private static int indexOf(List<String> names, Object value) {
         return Math.max(0, names.indexOf(BmReflect.enumName(value)));
     }
 
-    private static double fuseTime(Entity entity) {
+    private static double fuseTime(Object entity) {
         return BmReflect.call(entity, "getFuse") instanceof Number n ? n.doubleValue() : -1.0;
     }
 
-    private static void armadillo(Entity entity, EntitySnapshot s) {
+    private static void armadillo(Object entity, EntitySnapshot s) {
         String state = switch (BmReflect.enumName(BmReflect.call(entity, "getState"))) {
             case "rolling" -> "rolled_up";
             case "scared" -> BmReflect.started(entity, "peekAnimationState") ? "rolled_up_peeking" : "rolled_up";
@@ -119,12 +144,12 @@ final class BmMobStates {
         s.properties.put("minecraft:armadillo_state", state);
     }
 
-    private static void bee(Entity entity, EntitySnapshot s) {
+    private static void bee(Object entity, EntitySnapshot s) {
         s.properties.put("minecraft:has_nectar", BmReflect.flag(entity, "hasNectar"));
         s.markVariant = BmReflect.flag(entity, "hasStung") > 0 ? 1 : 0;
     }
 
-    private static void creaking(Entity entity, EntitySnapshot s) {
+    private static void creaking(Object entity, EntitySnapshot s) {
         boolean tearingDown = BmReflect.flag(entity, "isTearingDown") > 0;
         boolean active = BmReflect.flag(entity, "isActive") > 0 || BmReflect.flag(entity, "isAggressive") > 0;
         boolean canMove = BmReflect.flag(entity, "canMove") > 0;
@@ -137,7 +162,7 @@ final class BmMobStates {
         s.properties.put("minecraft:creaking_swaying_ticks", swaying ? 1.0 : 0.0);
     }
 
-    private static void copperGolem(Entity entity, EntitySnapshot s) {
+    private static void copperGolem(Object entity, EntitySnapshot s) {
         String chest = switch (BmReflect.enumName(BmReflect.call(entity, "getState"))) {
             case "getting_item" -> "take";
             case "getting_no_item" -> "take_fail";
@@ -155,13 +180,13 @@ final class BmMobStates {
         s.properties.put("minecraft:oxidation_level", oxidation);
     }
 
-    private static void slime(Entity entity, EntitySnapshot s) {
+    private static void slime(Object entity, EntitySnapshot s) {
         s.variant = BmReflect.number(entity, "getSize");
         s.extra.put("current_squish_value", BmReflect.fieldNumber(entity, "squish"));
         s.extra.put("previous_squish_value", BmReflect.fieldNumber(entity, "oSquish"));
     }
 
-    private static void villager(Entity entity, EntitySnapshot s) {
+    private static void villager(Object entity, EntitySnapshot s) {
         Object data = BmReflect.call(entity, "getVillagerData");
         if (data == null) return;
         s.variant = indexOf(PROFESSIONS, BmReflect.call(data, "profession"));
@@ -170,13 +195,13 @@ final class BmMobStates {
         s.extra.put("trade_tier", Math.max(0.0, level - 1.0));
     }
 
-    private static void shulker(Entity entity, EntitySnapshot s) {
+    private static void shulker(Object entity, EntitySnapshot s) {
         if (!BmReflect.has(entity, "getColor")) return;
         int index = SHULKER.indexOf(BmReflect.enumName(BmReflect.call(entity, "getColor")));
         s.variant = index >= 0 ? index : SHULKER_UNDYED;
     }
 
-    private static void panda(Entity entity, EntitySnapshot s, float pt) {
+    private static void panda(Object entity, EntitySnapshot s, float pt) {
         Object gene = BmReflect.has(entity, "getVariant") ? BmReflect.call(entity, "getVariant") : BmReflect.call(entity, "getMainGene");
         s.variant = indexOf(PANDA, gene);
         s.extra.put("lie_amount", BmReflect.numberFloat(entity, "getLieOnBackAmount", pt));
@@ -185,13 +210,13 @@ final class BmMobStates {
         s.extra.put("is_scared", BmReflect.flag(entity, "isScared"));
     }
 
-    private static void warden(Entity entity, EntitySnapshot s, float pt) {
+    private static void warden(Object entity, EntitySnapshot s, float pt) {
         double tendril = BmReflect.numberFloat(entity, "getTendrilAnimation", pt);
         s.extra.put("time_since_last_vibration_detection", (1.0 - tendril) * TENDRIL_SECONDS);
         s.extra.put("heartbeat_phase", 1.0 - BmReflect.numberFloat(entity, "getHeartAnimation", pt));
     }
 
-    private static void sniffer(Entity entity, EntitySnapshot s) {
+    private static void sniffer(Object entity, EntitySnapshot s) {
         String state = BmReflect.enumName(BmReflect.call(entity, "getState"));
         s.extra.put("timer_flag_1", state.equals("scenting") ? 1.0 : 0.0);
         s.extra.put("timer_flag_2", state.equals("feeling_happy") ? 1.0 : 0.0);

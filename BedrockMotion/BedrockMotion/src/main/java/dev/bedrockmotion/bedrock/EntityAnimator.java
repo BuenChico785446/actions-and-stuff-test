@@ -5,6 +5,7 @@ import dev.bedrockmotion.molang.Script;
 import dev.bedrockmotion.molang.Values;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,6 +36,15 @@ public final class EntityAnimator {
         long ranSeq = -1;
     }
 
+    private static final class Resolved {
+        static final Resolved NONE = new Resolved();
+        String lowerId;
+        ControllerDef controllerDef;
+        AnimationDef animationDef;
+        ControllerInstance controller;
+        AnimInstance animation;
+    }
+
     public final ClientEntityDef def;
     public final Env env;
     public final Pose pose = new Pose();
@@ -44,6 +54,7 @@ public final class EntityAnimator {
     public record ParticleRequest(String particleId, String locator, Script preEffect) {}
     private final Map<String, AnimInstance> anims = new HashMap<>();
     private final Map<String, ControllerInstance> controllers = new HashMap<>();
+    private final Map<Object, Resolved> resolved = new IdentityHashMap<>();
     private boolean initialized;
     private long updateSeq;
     private int controllerDepth;
@@ -75,15 +86,13 @@ public final class EntityAnimator {
         pose.reset();
         for (ClientEntityDef.Conditional c : def.animate) {
             if (c.condition() != null && !Values.truthy(c.condition().run(env))) continue;
-            String id = def.animations.get(c.name().toLowerCase(Locale.ROOT));
-            if (id == null) continue;
-            String lower = id.toLowerCase(Locale.ROOT);
-            if (lower.startsWith("controller.")) {
-                ControllerDef cd = def.pack.controller(lower);
-                if (cd != null) runController(controllerFor(lower, cd), 1.0);
-            } else {
-                AnimationDef ad = def.pack.animation(lower);
-                if (ad != null) play(instance(lower, ad), 1.0);
+            Resolved r = resolve(c, c.name());
+            if (r.controllerDef != null) {
+                if (r.controller == null) r.controller = controllerFor(r.lowerId, r.controllerDef);
+                runController(r.controller, 1.0);
+            } else if (r.animationDef != null) {
+                if (r.animation == null) r.animation = instance(r.lowerId, r.animationDef);
+                play(r.animation, 1.0);
             }
         }
         for (AnimInstance a : anims.values()) {
@@ -107,6 +116,26 @@ public final class EntityAnimator {
             }
             env.setVar(id, e.getValue());
         }
+    }
+
+    private Resolved resolve(Object owner, String name) {
+        Resolved r = resolved.get(owner);
+        if (r != null) return r;
+        r = Resolved.NONE;
+        String id = def.animations.get(name.toLowerCase(Locale.ROOT));
+        if (id != null) {
+            String lower = id.toLowerCase(Locale.ROOT);
+            ControllerDef cd = lower.startsWith("controller.") ? def.pack.controller(lower) : null;
+            AnimationDef ad = cd == null && !lower.startsWith("controller.") ? def.pack.animation(lower) : null;
+            if (cd != null || ad != null) {
+                r = new Resolved();
+                r.lowerId = lower;
+                r.controllerDef = cd;
+                r.animationDef = ad;
+            }
+        }
+        resolved.put(owner, r);
+        return r;
     }
 
     private AnimInstance instance(String key, AnimationDef d) {
@@ -191,25 +220,22 @@ public final class EntityAnimator {
         boolean has = false;
         env.stateTime = current ? c.stateTime : c.stateTime;
         for (ControllerDef.AnimRef ref : s.animations) {
-            String id = def.animations.get(ref.name().toLowerCase(Locale.ROOT));
-            if (id == null) continue;
-            String lowerId = id.toLowerCase(Locale.ROOT);
-            if (lowerId.startsWith("controller.")) {
-                ControllerDef nested = def.pack.controller(lowerId);
-                if (nested == null) continue;
+            Resolved r = resolve(ref, ref.name());
+            if (r.controllerDef != null) {
                 double nw = weight;
                 if (ref.blend() != null) nw *= ref.blend().runNum(env);
                 double savedStateTime = env.stateTime;
-                runController(controllerFor(lowerId, nested), nw);
+                if (r.controller == null) r.controller = controllerFor(r.lowerId, r.controllerDef);
+                runController(r.controller, nw);
                 env.stateTime = savedStateTime;
                 has = true;
                 continue;
             }
-            AnimationDef ad = def.pack.animation(lowerId);
-            if (ad == null) continue;
+            if (r.animationDef == null) continue;
             double w = weight;
             if (ref.blend() != null) w *= ref.blend().runNum(env);
-            AnimInstance ai = instance(c.key + "|" + s.name + "|" + id.toLowerCase(Locale.ROOT), ad);
+            if (r.animation == null) r.animation = instance(c.key + "|" + s.name + "|" + r.lowerId, r.animationDef);
+            AnimInstance ai = r.animation;
             play(ai, w);
             has = true;
             any |= ai.finished;

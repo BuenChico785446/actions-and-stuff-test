@@ -188,6 +188,16 @@ final class BmProbe implements WorldProbe {
     }
 
     @Override
+    public String ownerIdentifier() {
+        return BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+    }
+
+    @Override
+    public boolean ownerIdentifierAny(String[] ids) {
+        return anyEntityType(entity, ids);
+    }
+
+    @Override
     public boolean ridingAnyEntityOfType(String[] ids) {
         Entity vehicle = entity.getVehicle();
         return vehicle != null && anyEntityType(vehicle, ids);

@@ -28,9 +28,14 @@ public final class Pose {
     }
 
     private final Map<String, Xf> bones = new HashMap<>();
+    private final Map<String, Xf> byGivenName = new HashMap<>();
 
     public Xf get(String bone) {
-        Xf x = bones.computeIfAbsent(bone.toLowerCase(Locale.ROOT), k -> new Xf());
+        Xf x = byGivenName.get(bone);
+        if (x == null) {
+            x = bones.computeIfAbsent(bone.toLowerCase(Locale.ROOT), k -> new Xf());
+            byGivenName.put(bone, x);
+        }
         x.touched = true;
         return x;
     }

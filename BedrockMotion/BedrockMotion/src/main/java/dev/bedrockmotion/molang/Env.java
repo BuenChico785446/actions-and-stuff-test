@@ -30,6 +30,7 @@ public final class Env {
     public double frameAlpha;
     public double timeStamp;
     public double animationFrame;
+    public double keyFrameLerpTime;
     public boolean anyAnimationFinished;
     public boolean allAnimationsFinished;
     public double thisValue;

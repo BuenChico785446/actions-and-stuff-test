@@ -1,5 +1,6 @@
 package dev.bedrockmotion.client.runtime;
 
+import dev.bedrockmotion.bedrock.AnimationDef;
 import dev.bedrockmotion.molang.Env;
 import dev.bedrockmotion.molang.EntitySnapshot;
 import dev.bedrockmotion.molang.Queries;
@@ -7,7 +8,6 @@ import dev.bedrockmotion.molang.Script;
 import dev.bedrockmotion.molang.Symbols;
 import java.util.ArrayList;
 import java.util.Optional;
-import net.minecraft.world.entity.Entity;
 
 public final class MobStatesTest {
 
@@ -60,7 +60,7 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Armadillo extends Entity {
+    public static final class Armadillo {
         public ArmadilloState state = ArmadilloState.IDLE;
         public final Anim peekAnimationState = new Anim();
 
@@ -69,7 +69,7 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Bee extends Entity {
+    public static final class Bee {
         public boolean nectar = true;
         public boolean stung = true;
 
@@ -82,7 +82,7 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Creaking extends Entity {
+    public static final class Creaking {
         public boolean active = true;
         public boolean canMove = false;
 
@@ -95,7 +95,7 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class CopperGolem extends Entity {
+    public static final class CopperGolem {
         public CopperState state = CopperState.IDLE;
         public Weather weather = Weather.UNAFFECTED;
 
@@ -108,7 +108,7 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Slime extends Entity {
+    public static final class Slime {
         public float squish = 0.6f;
         public float oSquish = 0.2f;
 
@@ -117,7 +117,7 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Horse extends Entity {
+    public static final class Horse {
         public HorseVariant getVariant() {
             return HorseVariant.DARK_BROWN;
         }
@@ -127,19 +127,19 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Cat extends Entity {
+    public static final class Cat {
         public Holder getVariant() {
             return new Holder("tabby");
         }
     }
 
-    public static final class Shulker extends Entity {
+    public static final class Shulker {
         public Object getColor() {
             return null;
         }
     }
 
-    public static final class Warden extends Entity {
+    public static final class Warden {
         public float getTendrilAnimation(float pt) {
             return 1.0f;
         }
@@ -151,7 +151,7 @@ public final class MobStatesTest {
 
     public enum PiglinArmPose { DEFAULT, DANCING, ADMIRING_ITEM }
 
-    public static final class Piglin extends Entity {
+    public static final class Piglin {
         public PiglinArmPose pose = PiglinArmPose.DANCING;
 
         public PiglinArmPose getArmPose() {
@@ -159,13 +159,71 @@ public final class MobStatesTest {
         }
     }
 
-    public static final class Turtle extends Entity {
+    public static final class Turtle {
         public boolean hasEgg() {
+            return true;
+        }
+
+        public boolean isLayingEgg() {
             return true;
         }
     }
 
-    public static final class Panda extends Entity {
+    public static final class Parrot {
+        public float oFlap = 1.0f;
+        public float flap = 3.0f;
+        public float oFlapSpeed = 0.5f;
+        public float flapSpeed = 1.5f;
+    }
+
+    public static final class EnderDragon {
+        public float oFlapTime = 2.0f;
+        public float flapTime = 4.0f;
+    }
+
+    public static final class PolarBear {
+        public float getStandingAnimationScale(float pt) {
+            return 0.75f;
+        }
+    }
+
+    public static final class Wolf {
+        public float getHeadRollAngle(float pt) {
+            return 0.5f;
+        }
+    }
+
+    public static final class Axolotl {
+        public boolean isPlayingDead() {
+            return true;
+        }
+    }
+
+    public static final class Donkey {
+        public boolean hasChest() {
+            return true;
+        }
+    }
+
+    public static final class Evoker {
+        public boolean isCastingSpell() {
+            return true;
+        }
+    }
+
+    public static final class WitherBoss {
+        public boolean isPowered() {
+            return true;
+        }
+    }
+
+    public static final class Creeper {
+        public int getSwellDir() {
+            return -1;
+        }
+    }
+
+    public static final class Panda {
         private int rollCounter = 16;
 
         public float getSitAmount(float pt) {
@@ -180,7 +238,12 @@ public final class MobStatesTest {
         }
     }
 
-    private static EntitySnapshot fill(Entity entity) {
+    private static Script[] lerpTimeScripts() {
+        Script one = Script.compile("return query.key_frame_lerp_time;", SYMBOLS, new ArrayList<>());
+        return new Script[] {one, one, one};
+    }
+
+    private static EntitySnapshot fill(Object entity) {
         EntitySnapshot s = new EntitySnapshot();
         BmMobStates.fill(entity, s, 0.5f);
         return s;
@@ -266,13 +329,50 @@ public final class MobStatesTest {
         check("piglin admiring", admire.extra.get("is_admiring"), 1.0);
         check("piglin not special", admire.extra.get("is_celebrating_special"), 0.0);
         check("turtle with egg", fill(new Turtle()).extra.get("is_pregnant"), 1.0);
+        check("turtle laying egg", fill(new Turtle()).extra.get("is_laying_egg"), 1.0);
+        EntitySnapshot parrot = fill(new Parrot());
+        check("parrot wing position is lerped", parrot.extra.get("wing_flap_position"), 2.0);
+        check("parrot wing speed is lerped", parrot.extra.get("wing_flap_speed"), 1.0);
+        check("dragon wing position", fill(new EnderDragon()).extra.get("wing_flap_position"), 3.0);
+        check("polar bear standing", fill(new PolarBear()).extra.get("standing_scale"), 0.75);
+        check("wolf head roll", fill(new Wolf()).extra.get("head_roll_angle"), 0.5);
+        check("axolotl playing dead", fill(new Axolotl()).extra.get("is_playing_dead"), 1.0);
+        check("donkey chest", fill(new Donkey()).extra.get("is_chested"), 1.0);
+        check("evoker casting", fill(new Evoker()).extra.get("is_casting"), 1.0);
+        check("wither shield", fill(new WitherBoss()).extra.get("is_shield_powered"), 1.0);
+        check("creeper swell direction", fill(new Creeper()).extra.get("swelling_dir"), -1.0);
+        check("dragon flap reaches molang", eval(fill(new EnderDragon()), "return query.wing_flap_position * 360.0;"), 1080.0);
+        check("parrot flap formula from the vanilla pack", eval(fill(new Parrot()), "return (math.sin(query.wing_flap_position * 57.3) + 1) * query.wing_flap_speed;"),
+                (Math.sin(2.0 * 57.3 * Math.PI / 180) + 1) * 1.0);
+
+        EntitySnapshot owner = new EntitySnapshot();
+        owner.identifier = "minecraft:player";
+        check("owner_identifier compares as a string", eval(owner, "return query.owner_identifier == 'minecraft:player';"), 1.0);
+        check("owner_identifier other id", eval(owner, "return query.owner_identifier == 'minecraft:zombie';"), 0.0);
+
+        AnimationDef.Keyframe first = new AnimationDef.Keyframe();
+        AnimationDef.Keyframe last = new AnimationDef.Keyframe();
+        first.time = 0.2;
+        last.time = 1.8;
+        first.pre = first.post = last.pre = last.post = lerpTimeScripts();
+        AnimationDef.Channel channel = new AnimationDef.Channel();
+        channel.frames = new AnimationDef.Keyframe[] {first, last};
+        Env sampleEnv = new Env(SYMBOLS);
+        double[] sampled = new double[3];
+        double[] current = new double[3];
+        channel.sample(sampleEnv, 1.0, sampled, current);
+        check("key_frame_lerp_time inside a span", sampled[0], 0.5);
+        channel.sample(sampleEnv, 0.0, sampled, current);
+        check("key_frame_lerp_time before the first key", sampled[0], 0.0);
+        channel.sample(sampleEnv, 3.0, sampled, current);
+        check("key_frame_lerp_time after the last key", sampled[0], 1.0);
 
         ArrayList<String> missing = new ArrayList<>();
         Queries.setMissingHandler(missing::add);
         EntitySnapshot probe = fill(new Panda());
         for (String name : new String[] {
             "is_ram_attacking", "is_eating", "lie_amount", "roll_counter", "sit_amount", "is_scared", "is_standing", "is_grazing",
-            "surface_particle_color", "surface_particle_texture_size", "surface_particle_texture_coordinate",
+            "surface_particle_color", "owner_identifier", "key_frame_lerp_time", "wing_flap_position", "wing_flap_speed", "is_laying_egg", "standing_scale", "head_roll_angle", "surface_particle_texture_size", "surface_particle_texture_coordinate",
             "ticks_since_last_kinetic_weapon_hit", "armor_texture_slot(1)", "armor_color_slot(4, 0)",
             "has_any_leashed_entity_of_type('minecraft:boat')", "is_riding_any_entity_of_type('minecraft:boat')", "bone_aabb('x')"}) {
             eval(probe, "return query." + name + (name.contains("(") ? "" : "") + ";");

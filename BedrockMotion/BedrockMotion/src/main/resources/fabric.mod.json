@@ -9,13 +9,18 @@
   "icon": "assets/bedrockmotion/icon.png",
   "environment": "client",
   "entrypoints": {
-    "client": ["dev.bedrockmotion.client.BedrockMotionClient"]
+    "client": ["dev.bedrockmotion.client.BedrockMotionClient"],
+    "modmenu": ["dev.bedrockmotion.client.config.ModMenuIntegration"]
   },
   "mixins": ["bedrockmotion.mixins.json"],
   "depends": {
     "fabricloader": ">=0.19.5",
     "fabric-api": "*",
+    "cloth-config": "*",
     "minecraft": "~26.3",
     "java": ">=25"
+  },
+  "suggests": {
+    "modmenu": "*"
   }
 }

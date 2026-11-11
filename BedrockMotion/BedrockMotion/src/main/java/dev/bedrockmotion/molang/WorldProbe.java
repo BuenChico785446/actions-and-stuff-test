@@ -40,6 +40,10 @@ public interface WorldProbe {
         return false;
     }
 
+    default String ownerIdentifier() {
+        return "";
+    }
+
     default int armorTextureSlot(int slot) {
         return 0;
     }
