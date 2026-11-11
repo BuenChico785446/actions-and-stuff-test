@@ -1,7 +1,11 @@
 package dev.bedrockmotion.client.runtime;
 
+import dev.bedrockmotion.client.BedrockMotionClient;
+import dev.bedrockmotion.molang.Struct;
 import dev.bedrockmotion.molang.WorldProbe;
+import java.util.List;
 import java.util.Map;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -14,6 +18,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 
 final class BmProbe implements WorldProbe {
 
@@ -119,5 +124,120 @@ final class BmProbe implements WorldProbe {
     public boolean relativeBlockHasAnyTag(double dx, double dy, double dz, String[] tags) {
         if (entity == null) return false;
         return blockHasAnyTag(entity.getX() + dx, entity.getY() + dy, entity.getZ() + dz, tags);
+    }
+
+    private static final EquipmentSlot[] ARMOR_SLOTS = {
+        EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.BODY
+    };
+    private static final int BODY_SLOT = 4;
+    private static final int LEATHER_RGB = 0xA06540;
+    private static final List<String> WEARABLE_MATERIALS =
+            List.of("leather", "chainmail", "iron", "diamond", "golden", "elytra", "turtle", "netherite", "copper");
+    private static final List<String> BODY_MATERIALS = List.of("leather", "iron", "golden", "diamond", "copper", "netherite");
+    private static final List<String> NAUTILUS_MATERIALS = List.of("copper", "iron", "golden", "diamond", "netherite");
+
+    private ItemStack armorStack(int slot) {
+        if (!(entity instanceof LivingEntity living) || slot < 0 || slot >= ARMOR_SLOTS.length) return ItemStack.EMPTY;
+        return living.getItemBySlot(ARMOR_SLOTS[slot]);
+    }
+
+    private static int materialIndex(List<String> materials, String path) {
+        for (int i = 0; i < materials.size(); i++) {
+            if (path.contains(materials.get(i))) return i;
+        }
+        return -1;
+    }
+
+    @Override
+    public int armorTextureSlot(int slot) {
+        ItemStack stack = armorStack(slot);
+        if (stack.isEmpty()) return slot == BODY_SLOT ? 0 : -1;
+        String path = nameOf(stack);
+        path = path.substring(path.indexOf(':') + 1);
+        if (slot != BODY_SLOT) return materialIndex(WEARABLE_MATERIALS, path);
+        String type = entity.getClass().getSimpleName();
+        if (type.contains("Nautilus")) return materialIndex(NAUTILUS_MATERIALS, path) + 1;
+        return materialIndex(BODY_MATERIALS, path) + 1;
+    }
+
+    @Override
+    public double armorColorSlot(int slot, int channel) {
+        ItemStack stack = armorStack(slot);
+        if (stack.isEmpty() || channel < 0 || channel > 2 || !nameOf(stack).contains("leather")) return 1.0;
+        Object dyed = stack.get(DataComponents.DYED_COLOR);
+        int rgb = dyed == null ? LEATHER_RGB : (int) BmReflect.number(dyed, "rgb");
+        return ((rgb >> (16 - 8 * channel)) & 0xFF) / 255.0;
+    }
+
+    private static boolean sameEntityType(String have, String want) {
+        String path = have.substring(have.indexOf(':') + 1);
+        String expected = want.substring(want.indexOf(':') + 1);
+        boolean chest = path.contains("chest_boat") || path.contains("chest_raft");
+        boolean vessel = path.endsWith("boat") || path.endsWith("raft");
+        if (expected.equals("boat")) return vessel && !chest;
+        if (expected.equals("chest_boat")) return vessel && chest;
+        return path.equalsIgnoreCase(expected);
+    }
+
+    private static boolean anyEntityType(Entity candidate, String[] ids) {
+        String have = BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).toString();
+        for (String id : ids) {
+            if (sameEntityType(have, id)) return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean ridingAnyEntityOfType(String[] ids) {
+        Entity vehicle = entity.getVehicle();
+        return vehicle != null && anyEntityType(vehicle, ids);
+    }
+
+    @Override
+    public boolean leashedEntityOfType(String[] ids) {
+        if (!(BmReflect.call(entity.level(), "entitiesForRendering") instanceof Iterable<?> all)) return false;
+        for (Object other : all) {
+            if (other instanceof Entity candidate && candidate != entity
+                    && BmReflect.call(candidate, "getLeashHolder") == entity && anyEntityType(candidate, ids)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean spriteWarned;
+
+    @Override
+    public Struct surfaceParticle(String kind) {
+        BlockPos pos = BlockPos.containing(entity.getX(), entity.getY() - 0.5, entity.getZ());
+        BlockState state = entity.level().getBlockState(pos);
+        Minecraft minecraft = Minecraft.getInstance();
+        Struct out = new Struct();
+        if (kind.equals("color")) {
+            Object tint = BmReflect.callWith(BmReflect.call(minecraft, "getBlockColors"), "getColor", state, entity.level(), pos, 0);
+            int rgb = tint instanceof Integer color && color != -1 ? color : 0xFFFFFF;
+            out.fields.put("r", ((rgb >> 16) & 0xFF) / 255.0);
+            out.fields.put("g", ((rgb >> 8) & 0xFF) / 255.0);
+            out.fields.put("b", (rgb & 0xFF) / 255.0);
+            out.fields.put("a", 1.0);
+            return out;
+        }
+        Object shaper = BmReflect.call(BmReflect.call(minecraft, "getBlockRenderer"), "getBlockModelShaper");
+        Object sprite = BmReflect.callWith(shaper, "getParticleIcon", state);
+        if (sprite == null && !spriteWarned) {
+            spriteWarned = true;
+            BedrockMotionClient.LOGGER.warn("BedrockMotion: no particle sprite for surface particles (BlockModelShaper.getParticleIcon missing)");
+        }
+        double u0 = spriteEdge(sprite, "getU0", "u0");
+        double v0 = spriteEdge(sprite, "getV0", "v0");
+        boolean size = kind.equals("size");
+        out.fields.put("u", size ? spriteEdge(sprite, "getU1", "u1") - u0 : u0);
+        out.fields.put("v", size ? spriteEdge(sprite, "getV1", "v1") - v0 : v0);
+        return out;
+    }
+
+    private static double spriteEdge(Object sprite, String getter, String accessor) {
+        double value = BmReflect.number(sprite, getter);
+        return value != 0 ? value : BmReflect.number(sprite, accessor);
     }
 }

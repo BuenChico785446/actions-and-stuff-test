@@ -6,9 +6,19 @@ learn from polytone ?
 
 fix iron golem
 fix cape 
-fix attack animations & item holding
+fix attack animations & item holding so its held in the arms where the animations are in general
 fix idk horse
 fix attached weapons
+fix zombies walk animation (they look like they slide a bit on the ground bc of the mini steps if they do any) and when losing legs zombies crawling on the ground he firstly sometimes falls under the ground which shouldnt happen
+ender dragon ??
+warden ??
+
+
+
+weiter
+mod menu und cloth config integration beenden auch
+
+
 
 
 optimize one day

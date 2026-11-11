@@ -77,6 +77,31 @@ public final class LocatorSolver {
         return s;
     }
 
+    public static Struct aabbStruct(GeometryDef geo, String boneName) {
+        int i = geo.indexOf(boneName);
+        double[] lo = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE};
+        double[] hi = {-Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE};
+        if (i >= 0) {
+            for (GeometryDef.Cube cube : geo.bones[i].cubes) {
+                for (GeometryDef.Quad quad : cube.quads) {
+                    if (quad == null) continue;
+                    for (int v = 0; v < 4; v++) {
+                        for (int axis = 0; axis < 3; axis++) {
+                            double value = quad.pos[v * 3 + axis];
+                            lo[axis] = Math.min(lo[axis], value);
+                            hi[axis] = Math.max(hi[axis], value);
+                        }
+                    }
+                }
+            }
+        }
+        if (lo[0] > hi[0]) return new Struct();
+        Struct out = new Struct();
+        out.fields.put("min", vec(-hi[0], lo[1], lo[2]));
+        out.fields.put("max", vec(-lo[0], hi[1], hi[2]));
+        return out;
+    }
+
     public static Struct trsStruct(Pose pose, double[] origin, String boneName) {
         Pose.Xf xf = pose.find(boneName.toLowerCase(java.util.Locale.ROOT));
         Struct t = vec(origin == null ? 0 : -origin[0] * 16.0, origin == null ? 0 : origin[1] * 16.0, origin == null ? 0 : origin[2] * 16.0);

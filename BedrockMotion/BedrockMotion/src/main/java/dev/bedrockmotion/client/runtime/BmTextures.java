@@ -2,6 +2,7 @@ package dev.bedrockmotion.client.runtime;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import dev.bedrockmotion.bedrock.BedrockPack;
+import dev.bedrockmotion.bedrock.ParticleDef;
 import dev.bedrockmotion.client.BedrockMotionClient;
 import dev.bedrockmotion.pack.PngEncoder;
 import java.io.ByteArrayInputStream;
@@ -15,6 +16,7 @@ import net.minecraft.resources.Identifier;
 public final class BmTextures {
 
     private static final Identifier FALLBACK = Identifier.fromNamespaceAndPath("minecraft", "textures/misc/white.png");
+    private static final Identifier BLOCK_ATLAS = Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
     private static final Map<String, Identifier> CACHE = new HashMap<>();
     private static int counter;
 
@@ -33,6 +35,7 @@ public final class BmTextures {
 
     public static Identifier get(BedrockPack pack, String path) {
         if (path == null) return FALLBACK;
+        if (ParticleDef.ATLAS_TERRAIN.equalsIgnoreCase(path)) return BLOCK_ATLAS;
         String key = pack.name + "|" + path.toLowerCase(Locale.ROOT);
         Identifier cached = CACHE.get(key);
         if (cached != null) return cached;

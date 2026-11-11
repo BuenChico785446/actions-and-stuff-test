@@ -63,7 +63,7 @@ public final class BmAttachables {
                     e.probe.entity = holder;
                     env.probe = e.probe;
                     BmRuntime.fill(holder, e, snapshot, 1.0f, dt);
-                    env.context.put("owning_entity", BmRuntime.envOf(holderId));
+                    BmRuntime.linkOwner(env, holderId);
                 }
                 snapshot.engineVars.put("is_first_person", firstPerson ? 1.0 : 0.0);
                 double life = holder != null ? holder.tickCount / 20.0 : env.lifeTime + dt;

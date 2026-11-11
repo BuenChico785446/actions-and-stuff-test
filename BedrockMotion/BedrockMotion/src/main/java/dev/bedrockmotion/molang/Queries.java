@@ -22,7 +22,6 @@ public final class Queries {
             "fuse_time",
             "get_root_locator_offset",
             "graphics_mode_is_any",
-            "has_any_leashed_entity_of_type",
             "cape_flap_amount",
             "has_cape",
             "has_dash_cooldown",
@@ -84,14 +83,12 @@ public final class Queries {
             "texture_frame_index",
             "ticks_since_last_kinetic_weapon_hit",
             "current_squish_value",
-            "surface_particle_color",
-            "surface_particle_texture_coordinate",
-            "surface_particle_texture_size",
             "bone_origin",
             "bone_orientation_trs",
             "bone_orientation_matrix",
             "time_since_last_vibration_detection", "trade_tier", "movement_direction", "previous_squish_value",
-            "shake_angle", "swim_amount", "timer_flag_1", "timer_flag_2", "timer_flag_3"
+            "shake_angle", "swim_amount", "timer_flag_1", "timer_flag_2", "timer_flag_3",
+            "is_standing", "is_ram_attacking", "is_eating", "lie_amount", "roll_counter", "sit_amount", "is_scared"
     };
 
     static {
@@ -99,6 +96,12 @@ public final class Queries {
     }
 
     private Queries() {}
+
+    private static Object property(EntitySnapshot entity, String key) {
+        Object value = entity.properties.get(key);
+        if (value == null && key.indexOf(':') < 0) value = entity.properties.get("minecraft:" + key);
+        return value;
+    }
 
     public static void register(String name, QueryFn fn) {
         REGISTRY.put(name.toLowerCase(Locale.ROOT), fn);
@@ -302,13 +305,17 @@ public final class Queries {
         register("is_riding_any_entity_of_type", (e, a) -> Values.bool(e.probe.ridingAnyEntityOfType(strings(a, 0))));
         register("is_owner_identifier_any", (e, a) -> Values.bool(e.probe.ownerIdentifierAny(strings(a, 0))));
         register("armor_texture_slot", (e, a) -> (double) e.probe.armorTextureSlot((int) d(a, 0)));
-        register("armor_color_slot", (e, a) -> (double) e.probe.armorColorSlot((int) d(a, 0)));
+        register("armor_color_slot", (e, a) -> e.probe.armorColorSlot((int) d(a, 0), (int) d(a, 1)));
+        register("surface_particle_texture_coordinate", (e, a) -> e.probe.surfaceParticle("coordinate"));
+        register("surface_particle_texture_size", (e, a) -> e.probe.surfaceParticle("size"));
+        register("surface_particle_color", (e, a) -> e.probe.surfaceParticle("color"));
+        register("has_any_leashed_entity_of_type", (e, a) -> Values.bool(e.probe.leashedEntityOfType(strings(a, 0))));
         register("property", (e, a) -> {
             String key = s(a.length > 0 ? a[0] : "");
-            Double local = e.entity.properties.get(key);
-            return local != null ? local : e.probe.property(key);
+            Object local = property(e.entity, key);
+            return local != null ? local : (Object) e.probe.property(key);
         });
-        register("has_property", (e, a) -> Values.bool(e.entity.properties.containsKey(s(a.length > 0 ? a[0] : ""))));
+        register("has_property", (e, a) -> Values.bool(property(e.entity, s(a.length > 0 ? a[0] : "")) != null));
         register("is_pack_setting_selected", (e, a) -> Values.bool(e.settings.selected(s(a.length > 0 ? a[0] : ""), a.length > 1 ? s(a[1]) : "")));
         register("graphics_mode_is_any", (e, a) -> {
             for (Object o : a) {
@@ -326,6 +333,7 @@ public final class Queries {
             return r == null ? "" : r;
         });
         register("bone_origin", (e, a) -> e.bones == null || a.length == 0 ? Values.ZERO : e.bones.origin(s(a[0])));
+        register("bone_aabb", (e, a) -> e.bones == null || a.length == 0 ? Values.ZERO : e.bones.aabb(s(a[0])));
         register("bone_orientation_trs", (e, a) -> e.bones == null || a.length == 0 ? Values.ZERO : e.bones.trs(s(a[0])));
         num("body_x_rotation", e -> e.entity.targetXRotation);
         num("eye_target_x_rotation", e -> e.entity.targetXRotation);

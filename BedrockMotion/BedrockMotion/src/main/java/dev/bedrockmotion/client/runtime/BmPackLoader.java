@@ -6,7 +6,6 @@ import dev.bedrockmotion.json.Json;
 import dev.bedrockmotion.molang.Queries;
 import dev.bedrockmotion.pack.PackFiles;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,7 +35,8 @@ public final class BmPackLoader implements PreparableReloadListener {
     private static List<BedrockPack> loadAll(ResourceManager manager) {
         List<BedrockPack> out = new ArrayList<>();
         Queries.setMissingHandler(name -> BedrockMotionClient.LOGGER.warn("Molang query not implemented: q.{}", name));
-        Map<String, Object> config = readConfig();
+        Map<String, Object> config = BmConfig.read();
+        BmConfig.enabled = config == null || Json.bool(config.get("enabled"), true);
         BmRuntime.replacePlayers = config != null && Json.bool(config.get("replacePlayers"), false);
         dev.bedrockmotion.bedrock.ParticleSystem.sizeFactor = config == null ? 1.0 : Math.max(0.05, Math.min(8, Json.num(config.get("particleScale"), 1.0)));
         Map<String, Object> features = config == null ? null : Json.obj(config.get("features"));
@@ -111,16 +111,5 @@ public final class BmPackLoader implements PreparableReloadListener {
             if (shown++ < 10) BedrockMotionClient.LOGGER.warn("  {}", problem);
         }
         return pack;
-    }
-
-    private static Map<String, Object> readConfig() {
-        Path file = FabricLoader.getInstance().getConfigDir().resolve("bedrockmotion.json");
-        if (!Files.isRegularFile(file)) return null;
-        try {
-            return Json.obj(Json.parse(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)));
-        } catch (IOException | RuntimeException e) {
-            BedrockMotionClient.LOGGER.warn("config/bedrockmotion.json invalid: {}", e.getMessage());
-            return null;
-        }
     }
 }

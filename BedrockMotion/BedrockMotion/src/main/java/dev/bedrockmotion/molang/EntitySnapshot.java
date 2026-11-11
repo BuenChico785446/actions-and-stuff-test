@@ -32,7 +32,7 @@ public final class EntitySnapshot {
     public double itemRemainingUseDuration;
     public double itemMaxUseDuration;
     public double cooldownTimeRemaining;
-    public double modelScale = 1;
+    public double modelScale = 1.0 / 16.0;
     public double variant;
     public double markVariant;
     public double skinId;
@@ -71,7 +71,7 @@ public final class EntitySnapshot {
     public String name = "";
     public String identifier = "";
     public String itemName = "";
-    public final Map<String, Double> properties = new HashMap<>();
+    public final Map<String, Object> properties = new HashMap<>();
     public final Map<String, Double> extra = new HashMap<>();
 
     public final Map<String, Double> engineVars = new HashMap<>();

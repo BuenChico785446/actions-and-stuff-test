@@ -44,8 +44,16 @@ public interface WorldProbe {
         return 0;
     }
 
-    default int armorColorSlot(int slot) {
-        return 0;
+    default double armorColorSlot(int slot, int channel) {
+        return 1.0;
+    }
+
+    default Struct surfaceParticle(String kind) {
+        return new Struct();
+    }
+
+    default boolean leashedEntityOfType(String[] ids) {
+        return false;
     }
 
     default double property(String key) {

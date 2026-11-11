@@ -41,6 +41,8 @@ public final class ParticleDef {
 
     public String id;
     public String material = "particles_alpha";
+    public static final String ATLAS_TERRAIN = "atlas.terrain";
+
     public String texture;
     public Symbols symbols;
     public final List<Curve> curves = new ArrayList<>();
@@ -321,13 +323,14 @@ public final class ParticleDef {
         };
         Map<String, Object> u = Json.obj(m.get("uv"));
         if (u == null) return;
-        texWidth = Json.num(u.get("texture_width"), 16);
-        texHeight = Json.num(u.get("texture_height"), 16);
+        double unit = ATLAS_TERRAIN.equalsIgnoreCase(texture) ? 1 : 16;
+        texWidth = Json.num(u.get("texture_width"), unit);
+        texHeight = Json.num(u.get("texture_height"), unit);
         Map<String, Object> fb = Json.obj(u.get("flipbook"));
         if (fb != null) {
             flipbook = true;
             baseUv = vec(fb.get("base_UV"), 2, 0, problems);
-            uvSize = vec(fb.get("size_UV"), 2, 16, problems);
+            uvSize = vec(fb.get("size_UV"), 2, unit, problems);
             stepUv = vec(fb.get("step_UV"), 2, 0, problems);
             fps = numOrNull(fb.get("frames_per_second"), problems);
             maxFrame = num(fb.get("max_frame"), 1, problems);
@@ -335,7 +338,7 @@ public final class ParticleDef {
             loopFrames = Json.bool(fb.get("loop"), false);
         } else {
             uv = vec(u.get("uv"), 2, 0, problems);
-            uvSize = vec(u.get("uv_size"), 2, 16, problems);
+            uvSize = vec(u.get("uv_size"), 2, unit, problems);
         }
     }
 

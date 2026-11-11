@@ -219,7 +219,7 @@ public final class GeometryDef {
         b.binding = Json.str(j.get("binding"), null);
         b.parentName = Json.str(j.get("parent"), null);
         double[] pivot = vec(j.get("pivot"), 0);
-        double[] rot = vec(j.get("rotation"), 0);
+        double[] rot = vec(j.containsKey("rotation") ? j.get("rotation") : j.get("bind_pose_rotation"), 0);
         b.pivotX = (float) -pivot[0];
         b.pivotY = (float) pivot[1];
         b.pivotZ = (float) pivot[2];

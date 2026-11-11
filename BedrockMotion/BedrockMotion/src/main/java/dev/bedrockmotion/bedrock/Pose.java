@@ -49,6 +49,14 @@ public final class Pose {
         }
     }
 
+    public int touchedCount() {
+        int count = 0;
+        for (Xf xf : bones.values()) {
+            if (xf.touched) count++;
+        }
+        return count;
+    }
+
     public int size() {
         return bones.size();
     }

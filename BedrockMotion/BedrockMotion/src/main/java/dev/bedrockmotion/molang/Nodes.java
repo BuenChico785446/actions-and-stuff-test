@@ -113,7 +113,12 @@ final class Nodes {
         @Override
         Object get(Env env) {
             int i = idFor(env);
-            return i < 0 ? null : env.getVar(i);
+            Object value = i < 0 ? null : env.getVar(i);
+            if (value == null && env.owner != null && env.ownerPublic.contains(name)) {
+                int owned = idFor(env.owner);
+                if (owned >= 0) value = env.owner.getVar(owned);
+            }
+            return value;
         }
 
         @Override

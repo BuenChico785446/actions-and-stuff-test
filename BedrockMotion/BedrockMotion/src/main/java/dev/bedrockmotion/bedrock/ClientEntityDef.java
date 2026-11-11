@@ -4,10 +4,12 @@ import dev.bedrockmotion.json.Json;
 import dev.bedrockmotion.molang.Script;
 import dev.bedrockmotion.molang.Symbols;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public final class ClientEntityDef {
 
@@ -30,6 +32,8 @@ public final class ClientEntityDef {
     public Script scaleX;
     public Script scaleY;
     public Script scaleZ;
+    public Script parentSetup;
+    public final Set<String> publicVariables = new HashSet<>();
     public boolean enableAttachables;
     public boolean hideArmor;
     public long minEngine;
@@ -49,6 +53,8 @@ public final class ClientEntityDef {
         if (scaleX == null) scaleX = lower.scaleX;
         if (scaleY == null) scaleY = lower.scaleY;
         if (scaleZ == null) scaleZ = lower.scaleZ;
+        if (parentSetup == null) parentSetup = lower.parentSetup;
+        publicVariables.addAll(lower.publicVariables);
         if (!enableAttachables) enableAttachables = lower.enableAttachables;
         if (!hideArmor) hideArmor = lower.hideArmor;
     }
@@ -78,16 +84,36 @@ public final class ClientEntityDef {
         def.minEngine = engineVersion(Json.str(d.get("min_engine_version"), null));
         Map<String, Object> scripts = Json.obj(d.get("scripts"));
         if (scripts != null) {
-            def.initialize = scriptList(scripts.get("initialize"), symbols, problems);
-            def.preAnimation = scriptList(scripts.get("pre_animation"), symbols, problems);
-            def.scale = scalar(scripts.get("scale"), symbols, problems);
-            def.scaleX = scalar(scripts.get("scalex"), symbols, problems);
-            def.scaleY = scalar(scripts.get("scaley"), symbols, problems);
-            def.scaleZ = scalar(scripts.get("scalez"), symbols, problems);
-            conditionals(scripts.get("animate"), def.animate, symbols, problems);
+            def.initialize = scriptList(script(scripts, "initialize"), symbols, problems);
+            def.preAnimation = scriptList(script(scripts, "pre_animation"), symbols, problems);
+            def.scale = scalar(script(scripts, "scale"), symbols, problems);
+            def.scaleX = scalar(script(scripts, "scalex"), symbols, problems);
+            def.scaleY = scalar(script(scripts, "scaley"), symbols, problems);
+            def.scaleZ = scalar(script(scripts, "scalez"), symbols, problems);
+            def.parentSetup = scalar(script(scripts, "parent_setup"), symbols, problems);
+            publicVariables(script(scripts, "variables"), def.publicVariables);
+            conditionals(script(scripts, "animate"), def.animate, symbols, problems);
         }
         conditionals(d.get("render_controllers"), def.renderControllers, symbols, problems);
         return def;
+    }
+
+    private static Object script(Map<String, Object> scripts, String key) {
+        for (Map.Entry<String, Object> e : scripts.entrySet()) {
+            if (e.getKey().equalsIgnoreCase(key)) return e.getValue();
+        }
+        return null;
+    }
+
+    private static void publicVariables(Object o, Set<String> out) {
+        Map<String, Object> m = Json.obj(o);
+        if (m == null) return;
+        for (Map.Entry<String, Object> e : m.entrySet()) {
+            if (!(e.getValue() instanceof String s) || !s.equalsIgnoreCase("public")) continue;
+            String name = e.getKey().toLowerCase(Locale.ROOT);
+            int dot = name.indexOf('.');
+            out.add(dot >= 0 ? name.substring(dot + 1) : name);
+        }
     }
 
     private static long engineVersion(String v) {

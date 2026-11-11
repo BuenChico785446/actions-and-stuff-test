@@ -3,6 +3,7 @@ package dev.bedrockmotion.molang;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 public final class Env {
 
@@ -20,6 +21,8 @@ public final class Env {
     public BoneSolver bones;
     public PackSettings settings = PackSettings.NONE;
     public Object[] vars = new Object[0];
+    public Env owner;
+    public Set<String> ownerPublic = Set.of();
     public double animTime;
     public double lifeTime;
     public double deltaTime;

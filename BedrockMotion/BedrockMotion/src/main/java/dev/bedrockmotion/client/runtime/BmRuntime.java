@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
@@ -42,6 +43,8 @@ import net.minecraft.world.phys.Vec3;
 
 public final class BmRuntime {
 
+    private static final double MODEL_UNIT = 1.0 / 16.0;
+
     static final class Entry {
         EntityAnimator animator;
         BmFrame frame;
@@ -49,6 +52,8 @@ public final class BmRuntime {
         long usedNanos;
         double walked;
         double walkSpeed;
+        double lastAttack;
+        double kineticHitAt = Double.NaN;
         PoseHierarchy hierarchy;
         boolean hierarchyResolved;
         boolean failed;
@@ -65,6 +70,32 @@ public final class BmRuntime {
         public volatile boolean particles = true;
         public volatile boolean textureMeshes = true;
         public volatile boolean sounds = true;
+
+        public boolean get(String name) {
+            return switch (name) {
+                case "entities" -> entities;
+                case "driver" -> driver;
+                case "attachables" -> attachables;
+                case "equipment" -> equipment;
+                case "particles" -> particles;
+                case "textureMeshes" -> textureMeshes;
+                case "sounds" -> sounds;
+                default -> false;
+            };
+        }
+
+        public void set(String name, boolean value) {
+            switch (name) {
+                case "entities" -> entities = value;
+                case "driver" -> driver = value;
+                case "attachables" -> attachables = value;
+                case "equipment" -> equipment = value;
+                case "particles" -> particles = value;
+                case "textureMeshes" -> textureMeshes = value;
+                case "sounds" -> sounds = value;
+                default -> {}
+            }
+        }
     }
 
     public static final Features features = new Features();
@@ -107,6 +138,14 @@ public final class BmRuntime {
         BedrockMotionClient.LOGGER.info(
                 "BedrockMotion: {} entity definitions and {} attachables active from {} pack(s)",
                 defs.size(), attachables.size(), loaded.size());
+        for (BedrockPack p : loaded) {
+            BedrockMotionClient.LOGGER.info("BedrockMotion: stack entry {} (base pack: {})", p.name, p.baseOnly);
+        }
+        List<dev.bedrockmotion.bedrock.ClientEntityDef> all = new ArrayList<>(defs.values());
+        all.addAll(attachables.values());
+        for (String line : dev.bedrockmotion.bedrock.StackReport.unresolved(all, 12)) {
+            BedrockMotionClient.LOGGER.info("BedrockMotion: {}", line);
+        }
     }
 
     public static boolean hasAttachables() {
@@ -117,9 +156,24 @@ public final class BmRuntime {
         return attachableDefs.get(itemId.toLowerCase(Locale.ROOT));
     }
 
-    static Env envOf(int entityId) {
-        Entry e = ENTRIES.get(entityId);
-        return e == null ? null : e.animator.env;
+    private static void runParentSetups(LivingEntity living, Env ownerEnv) {
+        for (EquipmentSlot slot : EQUIP_SLOTS) {
+            ItemStack stack = living.getItemBySlot(slot);
+            if (stack.isEmpty()) continue;
+            ClientEntityDef def = attachable(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+            if (def != null && def.parentSetup != null) def.parentSetup.run(ownerEnv);
+        }
+    }
+
+    static void linkOwner(Env env, Entry owner) {
+        env.owner = owner == null ? null : owner.animator.env;
+        env.ownerPublic = owner == null ? Set.of() : owner.animator.def.publicVariables;
+        if (env.owner != null) env.context.put("owning_entity", env.owner);
+        else env.context.remove("owning_entity");
+    }
+
+    static void linkOwner(Env env, int entityId) {
+        linkOwner(env, ENTRIES.get(entityId));
     }
 
     static Entry attachmentEntry(String key, ClientEntityDef def) {
@@ -163,6 +217,7 @@ public final class BmRuntime {
                 e.animator.env.probe = e.probe;
                 float yaw = fill(entity, e, e.animator.env.entity, partialTick, dt);
                 e.animator.update(dt, (entity.tickCount + partialTick) / 20.0, partialTick);
+                if (features.equipment && entity instanceof LivingEntity worn) runParentSetups(worn, e.animator.env);
                 RenderPlan plan = RenderPlanner.plan(e.animator);
                 if (!features.entities || (def.identifier.equals("minecraft:player") && !replacePlayers)) plan.layers.clear();
                 BmModelPose driver = plan.layers.isEmpty() && features.driver ? BmModelPose.capture(e.animator.pose, hierarchyOf(e, def)) : null;
@@ -175,6 +230,10 @@ public final class BmRuntime {
                 if (features.equipment && !plan.layers.isEmpty() && entity instanceof LivingEntity living) {
                     e.frame.setAttachments(buildEquipment(entity, living, e, plan, yaw, dt, partialTick));
                 }
+                BedrockMotionClient.once(
+                        "mode:" + def.identifier + (e.animator.pose.touchedCount() > 0),
+                        "BedrockMotion: {} uses layers={} poseBones={} (replacePlayers={}, driver={}, equipment={})",
+                        def.identifier, plan.layers.size(), e.animator.pose.touchedCount(), replacePlayers, features.driver, features.equipment);
                 if (!plan.layers.isEmpty()) {
                     BedrockMotionClient.once(
                             "replace:" + def.identifier,
@@ -260,7 +319,7 @@ public final class BmRuntime {
                 env.probe = owner.probe;
                 env.context.put("item_slot", EQUIP_NAMES[i]);
                 env.context.put("is_first_person", 0.0);
-                env.context.put("owning_entity", owner.animator.env);
+                linkOwner(env, owner);
                 env.context.put("slot_bone", resolver);
                 ae.animator.update(dt, entity.tickCount / 20.0, partialTick);
                 RenderPlan attachmentPlan = RenderPlanner.plan(ae.animator);
@@ -328,6 +387,13 @@ public final class BmRuntime {
                 return e.lastGeometry == null
                         ? LocatorSolverEmpty.struct()
                         : dev.bedrockmotion.bedrock.LocatorSolver.originStruct(e.lastGeometry, e.animator.pose, bone);
+            }
+
+            @Override
+            public Struct aabb(String bone) {
+                return e.lastGeometry == null
+                        ? new Struct()
+                        : dev.bedrockmotion.bedrock.LocatorSolver.aabbStruct(e.lastGeometry, bone);
             }
 
             @Override
@@ -430,6 +496,9 @@ public final class BmRuntime {
             s.health = living.getHealth();
             s.maxHealth = living.getMaxHealth();
             s.baby = living.isBaby();
+            double size = BmReflect.number(living, "getScale");
+            double ageScale = BmReflect.number(living, "getAgeScale");
+            s.modelScale = MODEL_UNIT * (size > 0 ? size : 1.0) * (ageScale > 0 ? ageScale : s.baby ? 0.5 : 1.0);
             s.sleeping = living.isSleeping();
             s.gliding = living.isFallFlying();
             s.alive = living.isAlive();
@@ -442,7 +511,8 @@ public final class BmRuntime {
             s.bodyYRotation = yaw;
             s.headYRotation = yaw;
         }
-        fillSpecialStates(entity, s);
+        fillSpecialStates(entity, entry, s, pt);
+        BmMobStates.fill(entity, s, pt);
         return yaw;
     }
 
@@ -496,16 +566,15 @@ public final class BmRuntime {
         s.swellAmount = BmReflect.numberFloat(entity, "getSwelling", pt);
     }
 
-    private static void fillSpecialStates(Entity entity, EntitySnapshot s) {
+    private static void fillSpecialStates(Entity entity, Entry entry, EntitySnapshot s, float pt) {
         Object skin = BmReflect.call(entity, "getSkin");
         s.extra.put("has_cape", skin != null && BmReflect.call(skin, "cape") != null ? 1.0 : 0.0);
-        s.extra.put("cape_flap_amount", capeFlap(entity, s));
+        s.extra.put("cape_flap_amount", capeFlap(s));
         s.extra.put("has_dash_cooldown", BmReflect.number(entity, "getJumpCooldown") > 0 ? 1.0 : BmReflect.flag(entity, "isDashing"));
         s.extra.put("is_delayed_attacking", Math.max(BmReflect.flag(entity, "isDelayedAttacking"), s.engineVars.getOrDefault("attack_time", 0.0) > 0 ? 1.0 : 0.0));
         boolean elder = BmReflect.flag(entity, "isElder") > 0 || entity.getClass().getSimpleName().equals("ElderGuardian");
         s.extra.put("is_elder", elder ? 1.0 : 0.0);
         s.extra.put("is_levitating", hasEffect(entity, "levitation"));
-        s.extra.put("is_pregnant", 0.0);
         boolean sniffing = entity.getClass().getSimpleName().equals("Sniffer") && String.valueOf(BmReflect.call(entity, "getState")).contains("SNIFFING");
         s.extra.put("is_sniffing", sniffing ? 1.0 : 0.0);
         s.extra.put("sneeze_counter", BmReflect.number(entity, "getSneezeCounter"));
@@ -515,27 +584,22 @@ public final class BmRuntime {
         s.extra.put("kinetic_weapon_dismount_duration", kinetic == null ? 0.0 : kinetic[1]);
         s.extra.put("kinetic_weapon_knockback_duration", kinetic == null ? 0.0 : kinetic[2]);
         s.extra.put("kinetic_weapon_damage_duration", kinetic == null ? 0.0 : kinetic[3]);
+        double attack = s.engineVars.getOrDefault("attack_time", 0.0);
+        double now = entity.tickCount + pt;
+        if (kinetic != null && attack > 0 && entry.lastAttack <= 0) entry.kineticHitAt = now;
+        entry.lastAttack = attack;
+        s.extra.put("ticks_since_last_kinetic_weapon_hit", Double.isNaN(entry.kineticHitAt) ? -1.0 : now - entry.kineticHitAt);
     }
 
-    private static double capeFlap(Entity entity, EntitySnapshot s) {
-    double yaw = Math.toRadians(s.bodyYRotation);
-    double forward = -s.positionDelta[0] * Math.sin(yaw)
-            + s.positionDelta[2] * Math.cos(yaw);
-
-    double lift = Math.max(0.0, Math.min(150.0, forward * 300.0));
-    double vertical = Math.max(-6.0, Math.min(32.0, -s.positionDelta[1] * 30.0));
-
-    double horizontal = Math.sqrt(
-            s.positionDelta[0] * s.positionDelta[0]
-                    + s.positionDelta[2] * s.positionDelta[2]);
-
-    double bob = Math.sin(s.modifiedDistanceMoved * 6.0)
-            * 32.0
-            * Math.min(0.1, horizontal);
-
-    return Math.max(0.0, Math.min(1.0,
-            (lift / 2.0 + vertical + bob) / 126.0));
-}
+    private static double capeFlap(EntitySnapshot s) {
+        double yaw = Math.toRadians(s.bodyYRotation);
+        double forward = -s.positionDelta[0] * Math.sin(yaw) + s.positionDelta[2] * Math.cos(yaw);
+        double lift = Math.max(0.0, Math.min(150.0, forward * 300.0));
+        double vertical = Math.max(-6.0, Math.min(32.0, -s.positionDelta[1] * 30.0));
+        double horizontal = Math.sqrt(s.positionDelta[0] * s.positionDelta[0] + s.positionDelta[2] * s.positionDelta[2]);
+        double bob = Math.sin(s.modifiedDistanceMoved * 0.9) * 32.0 * Math.min(0.1, horizontal);
+        return Math.max(0.0, Math.min(1.0, (lift / 2.0 + vertical + bob) / 126.0));
+    }
 
     private static double hasEffect(Entity entity, String name) {
         if (!(BmReflect.call(entity, "getActiveEffects") instanceof Collection<?> effects) || effects.isEmpty()) return 0.0;
