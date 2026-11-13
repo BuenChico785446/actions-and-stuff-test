@@ -131,6 +131,18 @@ public final class MobStatesTest {
         public Holder getVariant() {
             return new Holder("tabby");
         }
+
+        public float getLieDownAmount(float pt) {
+            return 0.5f;
+        }
+
+        public float getLieDownAmountTail(float pt) {
+            return 0.25f;
+        }
+
+        public float getRelaxStateOneAmount(float pt) {
+            return 0.75f;
+        }
     }
 
     public static final class Shulker {
@@ -179,6 +191,151 @@ public final class MobStatesTest {
     public static final class EnderDragon {
         public float oFlapTime = 2.0f;
         public float flapTime = 4.0f;
+
+        public double[] getLatencyPos(int index, float pt) {
+            return new double[] {100.0 - index * 3.0, 64.0 + index * 0.5, 0.0};
+        }
+
+        public Object getPhaseManager() {
+            return new Object() {
+                public Object getCurrentPhase() {
+                    return new Object() {
+                        public boolean isSitting() {
+                            return true;
+                        }
+                    };
+                }
+            };
+        }
+    }
+
+    public static final class Goat {
+        public float getRammingXHeadRot(float pt) {
+            return 0.3f;
+        }
+
+        public boolean hasLeftHorn() {
+            return false;
+        }
+
+        public boolean hasRightHorn() {
+            return true;
+        }
+    }
+
+    public static final class NoHornApi {
+        public static final class Goat {
+            public float getRammingXHeadRot(float pt) {
+                return 0.0f;
+            }
+        }
+    }
+
+    public static final class Rabbit {
+        public float getJumpCompletion(float pt) {
+            return 0.5f;
+        }
+    }
+
+    public static final class Witch {
+        public Stack getMainHandItem() {
+            return new Stack("minecraft:potion");
+        }
+    }
+
+    public static final class GlowSquid {
+        public int getDarkTicksRemaining() {
+            return 4;
+        }
+    }
+
+    public static final class Ghast {
+        public boolean isCharging() {
+            return true;
+        }
+    }
+
+    public static final class IronGolem {
+        public int getOfferFlowerTick() {
+            return 7;
+        }
+
+        public int getAttackAnimationTick() {
+            return 3;
+        }
+    }
+
+    public enum Arm { LEFT, RIGHT }
+
+    public static final class Allay {
+        public Arm getMainArm() {
+            return Arm.LEFT;
+        }
+
+        public Stack getMainHandItem() {
+            return new Stack("minecraft:apple");
+        }
+    }
+
+    public enum IllagerPose { CROSSED, CROSSBOW_HOLD, CROSSBOW_CHARGE }
+
+    public static final class Pillager {
+        public IllagerPose getArmPose() {
+            return IllagerPose.CROSSBOW_CHARGE;
+        }
+
+        public int getTicksUsingItem() {
+            return 10;
+        }
+    }
+
+    public static final class Holding {
+        public static final class Pillager {
+            public IllagerPose getArmPose() {
+                return IllagerPose.CROSSBOW_HOLD;
+            }
+        }
+    }
+
+    public static final class Stack {
+        private final String id;
+
+        Stack(String id) {
+            this.id = id;
+        }
+
+        public boolean isEmpty() {
+            return id.isEmpty();
+        }
+
+        public Object getItem() {
+            return new Object() {
+                @Override
+                public String toString() {
+                    return id;
+                }
+            };
+        }
+    }
+
+    public static final class Llama {
+        public String carpet = "minecraft:light_blue_carpet";
+
+        public Stack getBodyArmorItem() {
+            return new Stack(carpet);
+        }
+    }
+
+    public static final class HorseLike {
+        private int tailCounter = 5;
+
+        public float getStandAnim(float pt) {
+            return 0.75f;
+        }
+
+        public float getMouthAnim(float pt) {
+            return 0.2f;
+        }
     }
 
     public static final class PolarBear {
@@ -255,6 +412,8 @@ public final class MobStatesTest {
         if (!problems.isEmpty()) System.out.println("  Problem: " + problems);
         Env env = new Env(SYMBOLS);
         env.entity = s;
+        s.engineVars.forEach((name, value) -> env.setVar(SYMBOLS.varId(name), value));
+        s.engineStructs.forEach((name, value) -> env.setVar(SYMBOLS.varId(name), value));
         return script.runNum(env);
     }
 
@@ -344,6 +503,42 @@ public final class MobStatesTest {
         check("dragon flap reaches molang", eval(fill(new EnderDragon()), "return query.wing_flap_position * 360.0;"), 1080.0);
         check("parrot flap formula from the vanilla pack", eval(fill(new Parrot()), "return (math.sin(query.wing_flap_position * 57.3) + 1) * query.wing_flap_speed;"),
                 (Math.sin(2.0 * 57.3 * Math.PI / 180) + 1) * 1.0);
+
+        EntitySnapshot dragon = fill(new EnderDragon());
+        check("dragon history has 24 frames", dragon.engineStructs.size(), 24);
+        check("dragon frame 5 rot_y", dragon.engineStructs.get("historical_frame_5").fields.get("rot_y"), 85.0);
+        check("dragon frame 5 pos_y", dragon.engineStructs.get("historical_frame_5").fields.get("pos_y"), 66.5);
+        check("dragon perched", dragon.sitting, true);
+        check("history struct is readable from molang", eval(dragon, "return v.historical_frame_5.rot_y - v.historical_frame_10.rot_y;"), 15.0);
+
+        EntitySnapshot goat = fill(new Goat());
+        check("goat horns", goat.engineVars.get("goat_has_left_horn") + "/" + goat.engineVars.get("goat_has_right_horn"), "0.0/1.0");
+        check("goat bows its head while ramming", goat.engineVars.get("should_bow_head"), 1.0);
+        EntitySnapshot oldGoat = fill(new NoHornApi.Goat());
+        check("goat without a horn api keeps both horns", oldGoat.engineVars.get("goat_has_left_horn") + "/" + oldGoat.engineVars.get("goat_has_right_horn"), "1.0/1.0");
+        EntitySnapshot cat = fill(new Cat());
+        check("cat lying", cat.engineVars.get("liedownamount") + "/" + cat.engineVars.get("liedownamounttail") + "/" + cat.engineVars.get("lieonplayer"), "0.5/0.25/0.75");
+        check("rabbit jump", fill(new Rabbit()).engineVars.get("jump_rotation"), 1.0);
+        check("witch holding", fill(new Witch()).engineVars.get("isholdingitem"), 1.0);
+        check("glow squid alpha", fill(new GlowSquid()).engineVars.get("glow_alpha"), 0.6);
+        check("ghast charging", fill(new Ghast()).engineVars.get("ischarging"), 1.0);
+        EntitySnapshot ironGolem = fill(new IronGolem());
+        check("golem flower and attack", ironGolem.engineVars.get("offer_flower_tick") + "/" + ironGolem.engineVars.get("attack_animation_tick"), "7.0/3.0");
+        EntitySnapshot allay = fill(new Allay());
+        check("allay holds with the left hand", allay.engineVars.get("is_holding_left") + "/" + allay.engineVars.get("is_holding_right"), "1.0/0.0");
+        EntitySnapshot pillager = fill(new Pillager());
+        check("pillager charging", pillager.engineVars.get("attack_state") + "/" + pillager.engineVars.get("crossbow_charge"), "2.0/0.4");
+        check("pillager holding", fill(new Holding.Pillager()).engineVars.get("attack_state"), 1.0);
+        check("llama carpet index (light blue is not blue)", fill(new Llama()).engineVars.get("decortextureindex"), 4.0);
+        Llama blue = new Llama();
+        blue.carpet = "minecraft:blue_carpet";
+        check("llama blue carpet", fill(blue).engineVars.get("decortextureindex"), 12.0);
+        Llama none = new Llama();
+        none.carpet = "";
+        check("llama without carpet", fill(none).engineVars.get("decortextureindex"), 0.0);
+        EntitySnapshot rearing = fill(new HorseLike());
+        check("horse rearing", rearing.engineVars.get("stand_anim"), 0.75);
+        check("horse tail and mouth", rearing.engineVars.get("shake_tail") + "/" + rearing.engineVars.get("open_mouth"), "1.0/1.0");
 
         EntitySnapshot owner = new EntitySnapshot();
         owner.identifier = "minecraft:player";

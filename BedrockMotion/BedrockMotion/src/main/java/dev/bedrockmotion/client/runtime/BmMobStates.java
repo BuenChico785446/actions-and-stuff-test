@@ -1,7 +1,9 @@
 package dev.bedrockmotion.client.runtime;
 
 import dev.bedrockmotion.molang.EntitySnapshot;
+import dev.bedrockmotion.molang.Struct;
 import java.util.List;
+import java.util.Locale;
 
 final class BmMobStates {
 
@@ -28,6 +30,11 @@ final class BmMobStates {
             "weaponsmith", "toolsmith", "butcher", "leatherworker", "stonemason", "nitwit");
     private static final List<String> VILLAGER_TYPES = List.of("plains", "desert", "jungle", "savanna", "snow", "swamp", "taiga");
     private static final double TENDRIL_SECONDS = 0.5;
+    private static final int DRAGON_FRAMES = 24;
+    private static final double CROSSBOW_CHARGE_TICKS = 25.0;
+    private static final List<String> DYES = List.of(
+            "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue",
+            "brown", "green", "red", "black");
 
     private BmMobStates() {}
 
@@ -60,14 +67,21 @@ final class BmMobStates {
             case "Llama" -> {
                 s.variant = indexOf(LLAMA, BmReflect.call(entity, "getVariant"));
                 s.extra.put("is_chested", BmReflect.flag(entity, "hasChest"));
+                s.engineVars.put("decortextureindex", decorIndex(entity));
             }
             case "TraderLlama" -> {
                 s.variant = indexOf(LLAMA, BmReflect.call(entity, "getVariant"));
                 s.markVariant = 1;
                 s.extra.put("is_chested", BmReflect.flag(entity, "hasChest"));
+                s.engineVars.put("decortextureindex", decorIndex(entity));
             }
             case "Donkey", "Mule" -> s.extra.put("is_chested", BmReflect.flag(entity, "hasChest"));
-            case "Cat" -> s.variant = indexOf(CAT, BmReflect.call(entity, "getVariant"));
+            case "Cat" -> {
+                s.variant = indexOf(CAT, BmReflect.call(entity, "getVariant"));
+                s.engineVars.put("liedownamount", BmReflect.numberFloat(entity, "getLieDownAmount", pt));
+                s.engineVars.put("liedownamounttail", BmReflect.numberFloat(entity, "getLieDownAmountTail", pt));
+                s.engineVars.put("lieonplayer", BmReflect.numberFloat(entity, "getRelaxStateOneAmount", pt));
+            }
             case "Wolf" -> {
                 s.variant = indexOf(WOLF, BmReflect.call(entity, "getVariant"));
                 s.extra.put("shake_angle", BmReflect.fieldNumber(entity, "shakeAnim"));
@@ -81,13 +95,36 @@ final class BmMobStates {
                 s.variant = indexOf(AXOLOTL, BmReflect.call(entity, "getVariant"));
                 s.extra.put("is_playing_dead", BmReflect.flag(entity, "isPlayingDead"));
             }
-            case "Rabbit" -> s.variant = indexOf(RABBIT, BmReflect.call(entity, "getVariant"));
+            case "Rabbit" -> {
+                s.variant = indexOf(RABBIT, BmReflect.call(entity, "getVariant"));
+                s.engineVars.put("jump_rotation", Math.sin(BmReflect.numberFloat(entity, "getJumpCompletion", pt) * Math.PI));
+            }
             case "Parrot" -> {
                 s.variant = indexOf(PARROT, BmReflect.call(entity, "getVariant"));
                 s.extra.put("wing_flap_position", lerpField(entity, "oFlap", "flap", pt));
                 s.extra.put("wing_flap_speed", lerpField(entity, "oFlapSpeed", "flapSpeed", pt));
             }
-            case "EnderDragon" -> s.extra.put("wing_flap_position", lerpField(entity, "oFlapTime", "flapTime", pt));
+            case "EnderDragon" -> {
+                s.extra.put("wing_flap_position", lerpField(entity, "oFlapTime", "flapTime", pt));
+                dragonHistory(entity, s, pt);
+            }
+            case "Witch" -> s.engineVars.put("isholdingitem", holdsItem(entity));
+            case "GlowSquid" -> {
+                double dark = BmReflect.number(entity, "getDarkTicksRemaining");
+                s.engineVars.put("glow_alpha", Math.max(0.0, Math.min(1.0, 1.0 - dark / 10.0)));
+            }
+            case "Ghast" -> s.engineVars.put("ischarging", BmReflect.flag(entity, "isCharging"));
+            case "IronGolem" -> {
+                s.engineVars.put("offer_flower_tick", BmReflect.number(entity, "getOfferFlowerTick"));
+                s.engineVars.put("attack_animation_tick", BmReflect.number(entity, "getAttackAnimationTick"));
+            }
+            case "Allay" -> {
+                boolean holding = holdsItem(entity) > 0;
+                boolean right = !BmReflect.enumName(BmReflect.call(entity, "getMainArm")).equals("left");
+                s.engineVars.put("is_holding_right", holding && right ? 1.0 : 0.0);
+                s.engineVars.put("is_holding_left", holding && !right ? 1.0 : 0.0);
+            }
+            case "Pillager" -> crossbow(entity, s);
             case "PolarBear" -> s.extra.put("standing_scale", BmReflect.numberFloat(entity, "getStandingAnimationScale", pt));
             case "Evoker", "Illusioner" -> s.extra.put("is_casting", BmReflect.flag(entity, "isCastingSpell"));
             case "WitherBoss" -> s.extra.put("is_shield_powered", BmReflect.flag(entity, "isPowered"));
@@ -101,11 +138,18 @@ final class BmMobStates {
                 s.extra.put("is_jump_goal_jumping", BmReflect.started(entity, "jumpAnimationState") ? 1.0 : 0.0);
             }
             case "Breeze" -> s.extra.put("is_jump_goal_jumping", BmReflect.started(entity, "longJump", "jump") ? 1.0 : 0.0);
-            case "Goat" -> s.extra.put("is_ram_attacking", BmReflect.numberFloat(entity, "getRammingXHeadRot", pt) > 0 ? 1.0 : 0.0);
+            case "Goat" -> {
+                boolean ramming = BmReflect.numberFloat(entity, "getRammingXHeadRot", pt) > 0;
+                s.extra.put("is_ram_attacking", ramming ? 1.0 : 0.0);
+                s.engineVars.put("should_bow_head", ramming ? 1.0 : 0.0);
+                s.engineVars.put("goat_has_left_horn", hornFlag(entity, "hasLeftHorn"));
+                s.engineVars.put("goat_has_right_horn", hornFlag(entity, "hasRightHorn"));
+            }
             case "Piglin", "PiglinBrute" -> {
                 String pose = BmReflect.enumName(BmReflect.call(entity, "getArmPose"));
                 s.extra.put("is_admiring", pose.equals("admiring_item") ? 1.0 : 0.0);
                 s.extra.put("is_celebrating_special", pose.equals("dancing") || BmReflect.flag(entity, "isDancing") > 0 ? 1.0 : 0.0);
+                crossbow(entity, s);
             }
             case "Turtle" -> {
                 s.extra.put("is_pregnant", BmReflect.flag(entity, "hasEgg"));
@@ -119,6 +163,54 @@ final class BmMobStates {
             }
             default -> {}
         }
+        if (BmReflect.callWith(entity, "getStandAnim", pt) != null) horse(entity, s, pt);
+    }
+
+    private static double hornFlag(Object entity, String method) {
+        return BmReflect.has(entity, method) ? BmReflect.flag(entity, method) : 1.0;
+    }
+
+    private static double holdsItem(Object entity) {
+        Object stack = BmReflect.call(entity, "getMainHandItem");
+        return stack != null && BmReflect.flag(stack, "isEmpty") == 0 ? 1.0 : 0.0;
+    }
+
+    private static void crossbow(Object entity, EntitySnapshot s) {
+        String pose = BmReflect.enumName(BmReflect.call(entity, "getArmPose"));
+        boolean charging = pose.equals("crossbow_charge");
+        s.engineVars.put("attack_state", charging ? 2.0 : pose.equals("crossbow_hold") ? 1.0 : 0.0);
+        double ticks = charging ? BmReflect.number(entity, "getTicksUsingItem") : 0.0;
+        s.engineVars.put("crossbow_charge", Math.max(0.0, Math.min(1.0, ticks / CROSSBOW_CHARGE_TICKS)));
+    }
+
+    private static void horse(Object entity, EntitySnapshot s, float pt) {
+        s.engineVars.put("stand_anim", BmReflect.numberFloat(entity, "getStandAnim", pt));
+        s.engineVars.put("shake_tail", BmReflect.fieldNumber(entity, "tailCounter") > 0 ? 1.0 : 0.0);
+        s.engineVars.put("open_mouth", BmReflect.numberFloat(entity, "getMouthAnim", pt) > 0 ? 1.0 : 0.0);
+    }
+
+    private static void dragonHistory(Object entity, EntitySnapshot s, float pt) {
+        for (int i = 0; i < DRAGON_FRAMES; i++) {
+            double[] latency = BmReflect.callWith(entity, "getLatencyPos", i, pt) instanceof double[] a && a.length >= 2 ? a : new double[2];
+            Struct frame = new Struct();
+            frame.fields.put("rot_y", latency[0]);
+            frame.fields.put("pos_y", latency[1]);
+            s.engineStructs.put("historical_frame_" + i, frame);
+        }
+        Object phase = BmReflect.call(BmReflect.call(entity, "getPhaseManager"), "getCurrentPhase");
+        if (BmReflect.flag(phase, "isSitting") > 0) s.sitting = true;
+    }
+
+    private static double decorIndex(Object entity) {
+        Object stack = BmReflect.call(entity, "getBodyArmorItem");
+        if (stack == null || BmReflect.flag(stack, "isEmpty") > 0) return 0.0;
+        String id = String.valueOf(BmReflect.call(stack, "getItem")).toLowerCase(Locale.ROOT);
+        int best = -1;
+        for (int i = 0; i < DYES.size(); i++) {
+            String dye = DYES.get(i);
+            if (id.contains(dye + "_carpet") && (best < 0 || dye.length() > DYES.get(best).length())) best = i;
+        }
+        return best + 1.0;
     }
 
     private static double lerpField(Object entity, String previous, String current, float pt) {

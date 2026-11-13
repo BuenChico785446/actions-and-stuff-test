@@ -589,6 +589,18 @@ public final class BmRuntime {
         if (kinetic != null && attack > 0 && entry.lastAttack <= 0) entry.kineticHitAt = now;
         entry.lastAttack = attack;
         s.extra.put("ticks_since_last_kinetic_weapon_hit", Double.isNaN(entry.kineticHitAt) ? -1.0 : now - entry.kineticHitAt);
+        spearStates(entity, s, kinetic);
+    }
+
+    private static void spearStates(Entity entity, EntitySnapshot s, double[] kinetic) {
+        boolean using = kinetic != null && BmReflect.flag(entity, "isUsingItem") > 0;
+        double ticks = using ? BmReflect.number(entity, "getTicksUsingItem") : 0.0;
+        double delay = kinetic == null ? 0.0 : kinetic[0];
+        boolean brandishing = kinetic != null && (using || BmReflect.flag(entity, "isAggressive") > 0);
+        s.engineVars.put("is_brandishing_spear", brandishing ? 1.0 : 0.0);
+        s.engineVars.put("use_item_startup_progress", using && delay > 0 && ticks < delay ? (ticks + 1.0) / delay : 0.0);
+        s.engineVars.put("use_item_interval_progress", using && ticks >= delay ? 1.0 : 0.0);
+        s.engineVars.put("damage_nearby_mobs", using && ticks >= delay && ticks <= delay + kinetic[3] ? 1.0 : 0.0);
     }
 
     private static double capeFlap(EntitySnapshot s) {

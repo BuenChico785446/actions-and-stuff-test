@@ -2,6 +2,7 @@ package dev.bedrockmotion.bedrock;
 
 import dev.bedrockmotion.molang.Env;
 import dev.bedrockmotion.molang.Script;
+import dev.bedrockmotion.molang.Struct;
 import dev.bedrockmotion.molang.Values;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -106,16 +107,17 @@ public final class EntityAnimator {
     }
 
     private void seedEngineVars() {
-        Map<String, Double> vars = env.entity.engineVars;
-        if (vars.isEmpty()) return;
-        for (Map.Entry<String, Double> e : vars.entrySet()) {
-            Integer id = engineVarIds.get(e.getKey());
-            if (id == null) {
-                id = env.symbols.varId(e.getKey());
-                engineVarIds.put(e.getKey(), id);
-            }
-            env.setVar(id, e.getValue());
+        for (Map.Entry<String, Double> e : env.entity.engineVars.entrySet()) env.setVar(engineVarId(e.getKey()), e.getValue());
+        for (Map.Entry<String, Struct> e : env.entity.engineStructs.entrySet()) env.setVar(engineVarId(e.getKey()), e.getValue());
+    }
+
+    private int engineVarId(String name) {
+        Integer id = engineVarIds.get(name);
+        if (id == null) {
+            id = env.symbols.varId(name);
+            engineVarIds.put(name, id);
         }
+        return id;
     }
 
     private Resolved resolve(Object owner, String name) {
@@ -217,8 +219,7 @@ public final class EntityAnimator {
     private void playState(ControllerInstance c, ControllerDef.State s, double weight, boolean current) {
         boolean any = false;
         boolean all = true;
-        boolean has = false;
-        env.stateTime = current ? c.stateTime : c.stateTime;
+        env.stateTime = c.stateTime;
         for (ControllerDef.AnimRef ref : s.animations) {
             Resolved r = resolve(ref, ref.name());
             if (r.controllerDef != null) {
@@ -228,7 +229,6 @@ public final class EntityAnimator {
                 if (r.controller == null) r.controller = controllerFor(r.lowerId, r.controllerDef);
                 runController(r.controller, nw);
                 env.stateTime = savedStateTime;
-                has = true;
                 continue;
             }
             if (r.animationDef == null) continue;
@@ -237,13 +237,12 @@ public final class EntityAnimator {
             if (r.animation == null) r.animation = instance(c.key + "|" + s.name + "|" + r.lowerId, r.animationDef);
             AnimInstance ai = r.animation;
             play(ai, w);
-            has = true;
             any |= ai.finished;
             all &= ai.finished;
         }
         if (current) {
             c.anyFinished = any;
-            c.allFinished = has && all;
+            c.allFinished = all;
         }
     }
 
@@ -272,6 +271,7 @@ public final class EntityAnimator {
         switch (d.loop) {
             case LOOP -> {
                 if (length > 0 && ai.time >= length) {
+                    ai.finished = true;
                     ai.time %= length;
                     ai.lastEventTime = -1;
                     if (d.loopDelay != null) {

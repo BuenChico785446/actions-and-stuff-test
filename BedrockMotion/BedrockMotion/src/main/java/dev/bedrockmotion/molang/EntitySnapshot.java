@@ -75,6 +75,7 @@ public final class EntitySnapshot {
     public final Map<String, Double> extra = new HashMap<>();
 
     public final Map<String, Double> engineVars = new HashMap<>();
+    public final Map<String, Struct> engineStructs = new HashMap<>();
 
     public EntitySnapshot() {
         resetEngineVars();
@@ -82,6 +83,7 @@ public final class EntitySnapshot {
 
     public void resetEngineVars() {
         engineVars.clear();
+        engineStructs.clear();
         engineVars.put("attack_time", 0.0);
         engineVars.put("swim_amount", 0.0);
         engineVars.put("gliding_speed_value", 1.0);
