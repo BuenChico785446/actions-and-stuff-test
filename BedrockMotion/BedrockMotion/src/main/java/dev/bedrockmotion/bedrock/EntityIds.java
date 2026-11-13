@@ -34,12 +34,10 @@ public final class EntityIds {
     }
 
     public static ClientEntityDef find(Map<String, ClientEntityDef> defs, String javaId) {
-        ClientEntityDef def = defs.get(javaId);
-        if (def != null) return def;
         for (String alt : bedrockCandidates(javaId)) {
-            def = defs.get(alt);
+            ClientEntityDef def = defs.get(alt);
             if (def != null) return def;
         }
-        return null;
+        return defs.get(javaId);
     }
 }

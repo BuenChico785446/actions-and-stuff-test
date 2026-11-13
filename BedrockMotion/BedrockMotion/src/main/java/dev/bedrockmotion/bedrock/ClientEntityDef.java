@@ -94,8 +94,24 @@ public final class ClientEntityDef {
             publicVariables(script(scripts, "variables"), def.publicVariables);
             conditionals(script(scripts, "animate"), def.animate, symbols, problems);
         }
+        if (def.animate.isEmpty()) legacyControllers(d.get("animation_controllers"), def);
         conditionals(d.get("render_controllers"), def.renderControllers, symbols, problems);
         return def;
+    }
+
+    private static void legacyControllers(Object o, ClientEntityDef def) {
+        List<Object> list = Json.arr(o);
+        if (list == null) return;
+        for (Object item : list) {
+            Map<String, Object> entry = Json.obj(item);
+            if (entry == null) continue;
+            for (Map.Entry<String, Object> e : entry.entrySet()) {
+                if (!(e.getValue() instanceof String id)) continue;
+                String key = "legacy:" + e.getKey().toLowerCase(Locale.ROOT);
+                def.animations.put(key, id);
+                def.animate.add(new Conditional(key, null));
+            }
+        }
     }
 
     private static Object script(Map<String, Object> scripts, String key) {

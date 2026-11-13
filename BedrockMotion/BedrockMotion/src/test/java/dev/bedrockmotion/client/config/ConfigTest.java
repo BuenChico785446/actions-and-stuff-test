@@ -95,11 +95,17 @@ public final class ConfigTest {
                 && written.contains("\"features\"") && written.contains("\"basePacks\"") && written.contains("\"subpacks\"")
                 && written.contains("\"settings\""), true);
 
+        for (Field f : BedrockMotionConfig.class.getDeclaredFields()) {
+            boolean isStatic = java.lang.reflect.Modifier.isStatic(f.getModifiers());
+            if (isStatic) check("static field " + f.getName() + " stays out of the screen", f.isAnnotationPresent(ConfigEntry.Gui.Excluded.class), true);
+            check("field " + f.getName() + " is public", java.lang.reflect.Modifier.isPublic(f.getModifiers()), true);
+        }
         for (Field f : BedrockMotionConfig.class.getFields()) {
-            if (f.getName().startsWith("MIN_") || f.getName().startsWith("MAX_")) continue;
             boolean hidden = f.isAnnotationPresent(ConfigEntry.Gui.Excluded.class);
             boolean categorized = f.isAnnotationPresent(ConfigEntry.Category.class);
+            boolean isStatic = java.lang.reflect.Modifier.isStatic(f.getModifiers());
             check("field " + f.getName() + " is either in a category or excluded", hidden != categorized, true);
+            if (isStatic) check("static field " + f.getName() + " is not categorized", categorized, false);
         }
         for (Field f : BedrockMotionConfig.Features.class.getFields()) {
             check("feature " + f.getName() + " has a tooltip", f.isAnnotationPresent(ConfigEntry.Gui.Tooltip.class), true);
@@ -107,7 +113,7 @@ public final class ConfigTest {
 
         Set<String> langKeys = LangKeys.read("src/main/resources/assets/bedrockmotion/lang/en_us.json");
         for (Field f : BedrockMotionConfig.class.getFields()) {
-            if (f.getName().startsWith("MIN_") || f.getName().startsWith("MAX_") || f.isAnnotationPresent(ConfigEntry.Gui.Excluded.class)) continue;
+            if (f.isAnnotationPresent(ConfigEntry.Gui.Excluded.class)) continue;
             if (f.isAnnotationPresent(ConfigEntry.Gui.TransitiveObject.class)) {
                 for (Field inner : f.getType().getFields()) {
                     String key = "text.autoconfig.bedrockmotion.option." + f.getName() + "." + inner.getName();

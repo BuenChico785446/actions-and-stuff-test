@@ -1,6 +1,7 @@
 package dev.bedrockmotion.client.runtime;
 
 import dev.bedrockmotion.bedrock.ParticleSystem;
+import dev.bedrockmotion.client.BedrockMotionClient;
 import dev.bedrockmotion.client.config.BedrockMotionConfig;
 import me.shedaniel.autoconfig.AutoConfig;
 import me.shedaniel.autoconfig.ConfigHolder;
@@ -18,10 +19,14 @@ public final class BmConfig {
     public static void init() {
         ConfigHolder<BedrockMotionConfig> registered = AutoConfig.register(BedrockMotionConfig.class, GsonConfigSerializer::new);
         registered.registerSaveListener((manager, config) -> {
-            apply(config);
-            if (!config.packSignature().equals(loadedSignature)) {
-                Minecraft minecraft = Minecraft.getInstance();
-                minecraft.execute(() -> minecraft.reloadResourcePacks());
+            try {
+                apply(config);
+                if (!config.packSignature().equals(loadedSignature)) {
+                    Minecraft minecraft = Minecraft.getInstance();
+                    minecraft.execute(() -> minecraft.reloadResourcePacks());
+                }
+            } catch (RuntimeException e) {
+                BedrockMotionClient.LOGGER.error("Applying the saved config failed", e);
             }
             return InteractionResult.SUCCESS;
         });

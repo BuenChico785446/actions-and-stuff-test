@@ -14,7 +14,10 @@ import me.shedaniel.autoconfig.annotation.ConfigEntry;
 @Config(name = BedrockMotionClient.MOD_ID)
 public class BedrockMotionConfig implements ConfigData {
 
+    @ConfigEntry.Gui.Excluded
     public static final double MIN_PARTICLE_SCALE = 0.05;
+
+    @ConfigEntry.Gui.Excluded
     public static final double MAX_PARTICLE_SCALE = 8.0;
 
     @ConfigEntry.Category("general")

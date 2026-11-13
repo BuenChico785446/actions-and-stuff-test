@@ -490,8 +490,8 @@ public final class BmRuntime {
             float head = Mth.rotLerp(pt, living.yHeadRotO, living.yHeadRot);
             yaw = body;
             s.bodyYRotation = body;
-            s.headYRotation = head;
             s.targetYRotation = Mth.clamp(Mth.wrapDegrees(head - body), -85f, 85f);
+            s.headYRotation = s.targetYRotation;
             s.yawSpeed = Mth.wrapDegrees(living.yBodyRot - living.yBodyRotO) * 20.0;
             s.health = living.getHealth();
             s.maxHealth = living.getMaxHealth();
@@ -509,7 +509,7 @@ public final class BmRuntime {
             fillLivingStates(living, s, pt, d.x * d.x + d.y * d.y + d.z * d.z);
         } else {
             s.bodyYRotation = yaw;
-            s.headYRotation = yaw;
+            s.headYRotation = 0;
         }
         fillSpecialStates(entity, entry, s, pt);
         BmMobStates.fill(entity, s, pt);
